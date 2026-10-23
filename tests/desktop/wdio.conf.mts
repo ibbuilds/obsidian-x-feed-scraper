@@ -9,14 +9,14 @@ const versions=await parseObsidianVersions(
 export const config:WebdriverIO.Config={
   runner:"local",
   framework:"mocha",
-  specs:["./tests/desktop/specs/plugin.e2e.ts"],
+  specs:["./specs/plugin.e2e.ts"],
   maxInstances:1,
   capabilities:versions.map(([appVersion,installerVersion])=>({
     browserName:"obsidian",
     "wdio:obsidianOptions":{
       appVersion,installerVersion,
-      plugins:["apps/obsidian-plugin"],
-      vault:"tests/desktop/vault"
+      plugins:["../../apps/obsidian-plugin"],
+      vault:"vault"
     }
   })),
   services:["obsidian"],
