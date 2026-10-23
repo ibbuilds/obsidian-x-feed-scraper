@@ -1,5 +1,5 @@
 import {createHash, randomUUID} from "node:crypto";
-import {existsSync, mkdirSync, readFileSync, renameSync, writeFileSync, unlinkSync} from "node:fs";
+import {existsSync, mkdirSync, readFileSync, linkSync, writeFileSync, unlinkSync} from "node:fs";
 import {join, resolve} from "node:path";
 import {Store} from "../storage/store.ts";
 import type {Source} from "./types.ts";
@@ -23,6 +23,9 @@ export function renderSource(source: Source): string {
     "score: " + source.score,
     "confidence: " + source.confidence,
     "discovered: " + yaml(source.firstSeen),
+    "discovered_date: " + source.firstSeen.slice(0,10),
+    "free: " + (source.access==="free"||source.access==="open_source"?"true":source.access==="paid"?"false":"null"),
+    "open_source: " + (source.access==="open_source"?"true":"null"),
     "author: " + yaml(source.author || ""),
     "post_url: " + yaml(source.postUrl || ""),
     "---", "",
@@ -37,17 +40,23 @@ export function renderSource(source: Source): string {
     ""
   ].filter((line,index,all)=>index!==all.length-1 || line!=="").join("\n")+"\n";
 }
-function putIfAbsent(path: string, content: string): "created"|"same"|"conflict" {
-  if (existsSync(path)) return readFileSync(path,"utf8")===content ? "same":"conflict";
-  const temporary=path+".tmp-"+randomUUID();
-  try {
-    writeFileSync(temporary,content,{encoding:"utf8",flag:"wx",mode:0o600});
-    // Because the collector is single-writer and these paths are dedicated to generated notes,
-    // a pre-existing file is never replaced, even if another process wrote it.
-    if (existsSync(path)) return "conflict";
-    renameSync(temporary,path);
-    return "created";
-  } finally {if (existsSync(temporary)) unlinkSync(temporary);}
+/** Atomic create-only promotion; never overwrites an existing or edited vault note. */
+function putIfAbsent(path:string,content:string):"created"|"same"|"conflict"{
+  if(existsSync(path))return readFileSync(path,"utf8")===content?"same":"conflict";
+  const temp=path+".tmp-"+randomUUID();
+  try{
+    writeFileSync(temp,content,{encoding:"utf8",flag:"wx",mode:0o600});
+    try{
+      // Hard-link is an atomic create-only operation (EEXIST protects user files).
+      linkSync(temp,path);
+      return "created";
+    }catch(e){
+      if((e as NodeJS.ErrnoException).code==="EEXIST"){
+        return readFileSync(path,"utf8")===content?"same":"conflict";
+      }
+      throw e;
+    }
+  }finally{if(existsSync(temp))unlinkSync(temp);}
 }
 const BASE = [
   "filters:",
@@ -89,8 +98,10 @@ export function exportToVault(dbPath:string,vaultPath:string): {created:number;u
   const store=new Store(dbPath);
   const result={created:0,unchanged:0,conflicts:0,skipped:0};
   try {
-    const all=store.listSources(undefined,undefined,500);
-    for (const source of all) {
+    for(let offset=0;;offset+=200){
+      const page=store.listSourcesPage(offset,200);
+      if(page.length===0)break;
+    for (const source of page) {
       if (library.has(source.url) || source.status==="rejected" || source.category==="existing_reference" ||
           (source.category==="uncategorized" && source.status!=="approved")) {
         result.skipped++;continue;
@@ -102,7 +113,18 @@ export function exportToVault(dbPath:string,vaultPath:string): {created:number;u
       if (value==="created") result.created++;
       else if (value==="same") result.unchanged++;
       else result.conflicts++;
-      // Never delete an old candidate note. Manual edits and previous review state survive.
+      // Only discard an unmodified generated candidate once an approved file exists.
+      if(source.status==="approved" && value!=="conflict"){
+        const oldFile=join(folder,"Candidates",shortId+".md");
+        if(existsSync(oldFile)){
+          const oldContent=readFileSync(oldFile,"utf8");
+          const generated=["discovered","pending_analysis","evaluated","high_quality","needs_review"]
+            .some(status=>oldContent===renderSource({...source,status:status as Source["status"]}));
+          if(generated)unlinkSync(oldFile);
+          else result.conflicts++; // Edited candidate intentionally remains untouched.
+        }
+      }
+    }
     }
     const stats=store.stats();
     const lastRun=stats.lastRun as {id?:string;started_at?:string;status?:string}|null;
