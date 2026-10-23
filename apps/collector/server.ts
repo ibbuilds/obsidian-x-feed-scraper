@@ -144,10 +144,12 @@ export function startServer(config:ServerOptions):ReturnType<typeof createServer
           const input=await body(req);
           const id=Number(input.id),decision=String(input.decision);
           if(!Number.isSafeInteger(id)||id<1||!["approved","rejected","needs_review","excellent"].includes(decision)||
+            (input.access!==undefined&&!["unknown","free","open_source","freemium","paid"].includes(String(input.access)))||
             typeof input.reason!=="string"||!input.reason.trim()||input.reason.length>1000){
             json(res,400,{error:"A valid decision and reason are required"});return;
           }
-          const source=store.review(id,decision as "approved"|"rejected"|"needs_review"|"excellent",input.reason);
+          const source=store.review(id,decision as "approved"|"rejected"|"needs_review"|"excellent",input.reason,
+            input.access as "unknown"|"free"|"open_source"|"freemium"|"paid"|undefined);
           json(res,200,{source,export:config.vault?exportToVault(config.db,config.vault):null});
         }else json(res,404,{error:"Not found"});
       }finally{store.close();}

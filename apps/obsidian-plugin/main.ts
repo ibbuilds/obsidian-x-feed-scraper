@@ -67,11 +67,22 @@ class ReviewModal extends Modal {
     this.titleEl.setText(decision+" — "+(source.title||source.url));
     this.contentEl.createEl("p",{text:"Evaluation: "+source.score+"/100; confidence "+
       Math.round(source.confidence*100)+"%. State why this source meets or fails your standard."});
+    const accessSetting=new Setting(this.contentEl).setName("Access type (manually verified)")
+      .setDesc("Free is not the same as open source. Choose only what you have checked.");
+    let selectedAccess=source.access;
+    accessSetting.addDropdown(dropdown=>{
+      dropdown.addOptions({
+        unknown:"Unknown",free:"Free",open_source:"Open source (license verified)",
+        freemium:"Freemium",paid:"Paid"
+      });
+      dropdown.setValue(source.access);
+      dropdown.onChange(value=>{selectedAccess=value;});
+    });
     const field=this.contentEl.createEl("textarea",{attr:{rows:"4",placeholder:"Reason (required)",style:"width:100%"}});
     new Setting(this.contentEl).addButton(b=>b.setButtonText("Save review").setCta().onClick(async()=>{
       if(!field.value.trim()){new Notice("A reason is required");return;}
       try{
-        await plugin.call("/review","POST",{id:source.id,decision,reason:field.value.trim()});
+        await plugin.call("/review","POST",{id:source.id,decision,reason:field.value.trim(),access:selectedAccess});
         this.close();done();new Notice("Decision stored locally");
       }catch(e){new Notice(asError(e));}
     }));

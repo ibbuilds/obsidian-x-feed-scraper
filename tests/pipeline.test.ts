@@ -184,3 +184,21 @@ test("public metadata enrichment excludes approved and existing-library sources"
     store.close();
   }finally{rmSync(root,{recursive:true,force:true});}
 });
+
+test("manual access classification and audit survive SQLite restarts",()=>{
+ const root=mkdtempSync(join(tmpdir(),"xfs-access-"));const db=join(root,"library.db");
+ try{
+   ingest(db,fixture,profile);
+   const store=new Store(db);
+   const resource=store.listSources().find(s=>s.url.includes("motion.dev"))!;
+   const reviewed=store.review(resource.id,"approved","Free tier checked manually","freemium");
+   assert.equal(reviewed.access,"freemium");
+   const audits=store.db.prepare("SELECT decision,access FROM reviews WHERE source_id=?").all(resource.id) as Array<{decision:string;access:string}>;
+   assert.equal(audits.at(-1)?.access,"freemium");
+   store.close();
+   const after=new Store(db);
+   assert.equal(after.getSource(resource.id)?.access,"freemium");
+   assert.throws(()=>after.review(resource.id,"approved","Bad field","pirated" as never),/Invalid access/);
+   after.close();
+ }finally{rmSync(root,{recursive:true,force:true});}
+});

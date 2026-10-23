@@ -2,7 +2,7 @@ import {DatabaseSync} from "node:sqlite";
 import {mkdirSync} from "node:fs";
 import {dirname} from "node:path";
 import {randomUUID} from "node:crypto";
-import type {Evaluation, Metadata, Post, Source, Status} from "../core/types.ts";
+import type {Access, Evaluation, Metadata, Post, Source, Status} from "../core/types.ts";
 import {normalizeUrl} from "../core/url.ts";
 
 type Row = Record<string, unknown>;
@@ -36,6 +36,10 @@ export class Store {
       "CREATE INDEX IF NOT EXISTS idx_sightings_post ON sightings(connector,post_id);" +
       "CREATE INDEX IF NOT EXISTS idx_post_sources_source ON post_sources(source_id);"
     );
+    const reviewColumns=this.db.prepare("PRAGMA table_info(reviews)").all() as Array<{name:string}>;
+    if(!reviewColumns.some(c=>c.name==="access")){
+      this.db.exec("ALTER TABLE reviews ADD COLUMN access TEXT");
+    }
   }
   close(): void {this.db.close();}
   begin(connector: string): string {
@@ -151,15 +155,18 @@ export class Store {
     ).all(Math.max(1,Math.min(1000,Math.floor(limit)))) as Row[];
   }
   listPosts(limit=100): Row[] {return this.db.prepare("SELECT id,connector,url,author,username,text,first_seen,last_seen,processing_status FROM posts ORDER BY last_seen DESC LIMIT ?").all(Math.min(500,Math.max(1,limit))) as Row[];}
-  review(id: number, decision: "approved"|"rejected"|"needs_review"|"excellent", reason: string): Source {
+  review(id: number, decision: "approved"|"rejected"|"needs_review"|"excellent", reason: string, access?:Access): Source {
     if (!reason.trim()) throw new Error("Review reason is required");
+    if(access && !["unknown","free","open_source","freemium","paid"].includes(access)) throw new Error("Invalid access classification");
     const source = this.getSource(id);
     if (!source) throw new Error("Source not found");
     const status = decision === "excellent" ? "approved" : decision;
     this.db.exec("BEGIN IMMEDIATE");
     try {
-      this.db.prepare("INSERT INTO reviews(source_id,decision,reason,reviewed_at) VALUES(?,?,?,?)").run(id,decision,reason.slice(0,1000),new Date().toISOString());
-      this.db.prepare("UPDATE sources SET status=?,updated_at=? WHERE id=?").run(status,new Date().toISOString(),id);
+      this.db.prepare("INSERT INTO reviews(source_id,decision,reason,reviewed_at,access) VALUES(?,?,?,?,?)")
+        .run(id,decision,reason.slice(0,1000),new Date().toISOString(),access||null);
+      this.db.prepare("UPDATE sources SET status=?,access=COALESCE(?,access),updated_at=? WHERE id=?")
+        .run(status,access||null,new Date().toISOString(),id);
       this.db.exec("COMMIT");
     } catch (e) {this.db.exec("ROLLBACK");throw e;}
     return this.getSource(id)!;
