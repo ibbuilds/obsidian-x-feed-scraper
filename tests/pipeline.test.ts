@@ -85,3 +85,21 @@ test("canonical redirects merge URLs without losing post-source relationships",(
     store.close();
   } finally{rmSync(root,{recursive:true,force:true});}
 });
+
+test("pause state and manual recommendation queue persist across restarts",()=>{
+  const root=mkdtempSync(join(tmpdir(),"xfs-feedback-"));const db=join(root,"store.db");
+  try {
+    ingest(db,fixture,profile);
+    const store=new Store(db);
+    store.setPaused(true);
+    const one=store.listSources().find(s=>s.url.includes("github.com"))!;
+    store.review(one.id,"approved","Trusted technical reference");
+    assert.equal(store.recommendations().posts.length,1);
+    assert.equal(store.recommendations().authors.length,1);
+    store.close();
+    const reopened=new Store(db);
+    assert.equal(reopened.paused(),true);
+    assert.equal(reopened.recommendations().authors[0].username,"studioa");
+    reopened.close();
+  } finally{rmSync(root,{recursive:true,force:true});}
+});
