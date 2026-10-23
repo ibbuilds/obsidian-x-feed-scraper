@@ -1,0 +1,9 @@
+{
+  "id": "x-feed-scraper",
+  "name": "X Feed Scraper",
+  "version": "0.1.0",
+  "minAppVersion": "1.8.0",
+  "description": "Review locally collected research candidates; requires the separate local collector.",
+  "author": "X Feed Scraper contributors",
+  "isDesktopOnly": true
+}
