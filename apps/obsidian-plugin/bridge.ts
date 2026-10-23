@@ -36,7 +36,7 @@ export class LocalBridge {
     if(!existsSync(config.profilePath))throw new Error("design.json missing. Install the complete plugin ZIP.");
     const token=randomBytes(32).toString("hex");
     const args=[
-      config.collectorPath,"serve","--port","0",
+      config.collectorPath,"serve","--port","0","--managed","true",
       "--db",config.databasePath,"--profile",config.profilePath,
       "--vault",config.vaultPath,"--interval",String(config.scheduleMinutes),
       "--threshold",String(config.threshold),
