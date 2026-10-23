@@ -85,13 +85,14 @@ export async function enrich(dbPath: string, profile: Profile, references: Reado
     for (const source of pending) {
       results.checked++;
       try {
-        const {metadata}=await fetchPublicMetadata(source.url);
-        const old=store.getMetadata(source.id);
-        const evaluation=evaluate(source.url,metadata.title || old.title || "",old.context,metadata,profile,references);
+        const {url:canonical,metadata}=await fetchPublicMetadata(source.url);
+        const canonicalId=store.repointSource(source.id,normalizeUrl(canonical));
+        const old=store.getMetadata(canonicalId);
+        const evaluation=evaluate(normalizeUrl(canonical),metadata.title || old.title || "",old.context,metadata,profile,references);
         const boost=store.preferenceBoost(evaluation.category);
         evaluation.score=Math.max(0,Math.min(100,evaluation.score+boost));
         if (evaluation.score>=profile.scoreThreshold && evaluation.confidence>=profile.confidenceThreshold) evaluation.status="high_quality";
-        store.updateEvaluation(source.id,metadata,evaluation);
+        store.updateEvaluation(canonicalId,metadata,evaluation);
         results.updated++;
       } catch {results.failed++;}
     }
