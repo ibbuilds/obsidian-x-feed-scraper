@@ -6,16 +6,18 @@ import {fetchPublicText} from "./public-http.ts";
 
 export function parseFeed(xml:string, feedUrl:string):Post[] {
   if(xml.length>1_000_000) throw new Error("Feed too large");
+  if(/<!DOCTYPE|<!ENTITY/i.test(xml)) throw new Error("DTD and custom XML entities are not allowed");
   const parser=new XMLParser({
     ignoreAttributes:false,attributeNamePrefix:"@_",textNodeName:"#text",
-    removeNSPrefix:true,processEntities:true,parseTagValue:false,parseAttributeValue:false
+    removeNSPrefix:true,processEntities:false,parseTagValue:false,parseAttributeValue:false
   });
   const document=parser.parse(xml) as Record<string,unknown>;
   function node(x:unknown):Record<string,unknown>{
     return x&&typeof x==="object"&&!Array.isArray(x)?x as Record<string,unknown>:{};
   }
   function value(x:unknown):string{
-    if(typeof x==="string")return x;
+    if(typeof x==="string")return x.replace(/&amp;/gi,"&").replace(/&lt;/gi,"<")
+      .replace(/&gt;/gi,">").replace(/&quot;/gi,"\"").replace(/&apos;/gi,"\'");
     if(typeof x==="number")return String(x);
     if(Array.isArray(x))return x.map(value).find(Boolean)||"";
     const o=node(x);
