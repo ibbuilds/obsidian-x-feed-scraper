@@ -68,3 +68,20 @@ test("failed duplicate fixture writes are recoverable",()=>{
     assert.equal(new Store(db).stats().sources,3);
   } finally {rmSync(root,{recursive:true,force:true});}
 });
+
+test("canonical redirects merge URLs without losing post-source relationships",()=>{
+  const root=mkdtempSync(join(tmpdir(),"xfs-canonical-"));const db=join(root,"store.db");
+  try {
+    ingest(db,[...fixture,{id:"short",url:"https://x.com/x/status/9",author:"S",username:"s",
+      text:"Motion reference https://t.co/redirect"}],profile);
+    const store=new Store(db);
+    const short=store.listSources().find(s=>s.url==="https://t.co/redirect")!;
+    const target=store.listSources().find(s=>s.url==="https://motion.dev/docs")!;
+    const combined=store.repointSource(short.id,"https://motion.dev/docs");
+    assert.equal(combined,target.id);
+    assert.equal(store.stats().sources,3);
+    const count=store.db.prepare("SELECT count(*) n FROM post_sources WHERE source_id=?").get(combined) as {n:number};
+    assert.equal(count.n,3);
+    store.close();
+  } finally{rmSync(root,{recursive:true,force:true});}
+});
