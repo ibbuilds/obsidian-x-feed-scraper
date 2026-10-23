@@ -4,7 +4,7 @@ import {mkdtempSync,mkdirSync,readFileSync,writeFileSync,readdirSync,existsSync,
 import {tmpdir} from "node:os";
 import {join} from "node:path";
 import {readFixture} from "../packages/connectors/fixtures.ts";
-import {ingest,importReferences} from "../packages/core/pipeline.ts";
+import {ingest,enrich,importReferences} from "../packages/core/pipeline.ts";
 import {exportToVault} from "../packages/core/obsidian.ts";
 import {Store} from "../packages/storage/store.ts";
 import {loadProfile} from "../packages/core/profile.ts";
@@ -68,6 +68,7 @@ test("failed duplicate fixture writes are recoverable",()=>{
     assert.ok(result.posts>=4);
     assert.equal(result.errors,1);
     const store=new Store(db);
+    assert.equal(store.history()[0].status,"partial");
     assert.equal(store.stats().sources,3);
     store.close();
   } finally {rmSync(root,{recursive:true,force:true});}
@@ -218,4 +219,21 @@ test("vault symlink directory cannot redirect generated notes outside vault",()=
    assert.throws(()=>exportToVault(db,vault),/symbolic link|symlink/i);
    assert.equal(readdirSync(outside).length,0);
  }finally{rmSync(root,{recursive:true,force:true});}
+});
+
+test("metadata failures are persisted without fetching private network resources",async()=>{
+  const root=mkdtempSync(join(tmpdir(),"xfs-metadata-"));const db=join(root,"db.sqlite");
+  try{
+    ingest(db,[{id:"local-1",url:"https://x.com/example/status/5",author:"Test",username:"test",
+      text:"Internal frontend UI resource http://127.0.0.1/private"}],profile);
+    const result=await enrich(db,profile,new Set(),10);
+    assert.equal(result.checked,1);
+    assert.equal(result.failed,1);
+    const store=new Store(db);
+    assert.equal(store.history()[0].status,"partial");
+    assert.equal(Number(store.stats().errors),1);
+    const entry=store.db.prepare("SELECT message FROM errors ORDER BY id DESC LIMIT 1").get() as {message:string};
+    assert.match(entry.message,/Local|unsafe|network/i);
+    store.close();
+  }finally{rmSync(root,{recursive:true,force:true});}
 });
