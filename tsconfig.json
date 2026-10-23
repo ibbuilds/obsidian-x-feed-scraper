@@ -10,5 +10,6 @@
     "types": ["node"],
     "skipLibCheck": true
   },
-  "include": ["packages/**/*.ts", "apps/**/*.ts", "tests/**/*.ts"]
+  "include": ["packages/**/*.ts", "apps/**/*.ts", "tests/**/*.ts"],
+  "exclude": ["tests/desktop/**/*"]
 }
