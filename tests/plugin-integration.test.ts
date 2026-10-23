@@ -48,6 +48,7 @@ test("shipped Obsidian collector boots, authenticates and exports without changi
     assert.equal(notes.length,1);
     assert.equal(readFileSync(join(vault,"References.md"),"utf8"),references);
     assert.ok(existsSync(join(vault,"X Feed Scraper","Sources.base")));
+    assert.equal(readdirSync(join(vault,"X Feed Scraper","Visuals")).length,1);
     assert.ok(existsSync(join(dir,"storage","library.db")));
     const imported=await fetch(url+"/import",{method:"POST",headers:{...auth,"content-type":"application/json"},
       body:JSON.stringify({posts:[{
