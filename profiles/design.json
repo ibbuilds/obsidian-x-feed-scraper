@@ -1,0 +1,16 @@
+{
+  "name": "design",
+  "categories": [
+    {"name": "web_design", "keywords": ["web design", "landing", "layout", "website", "responsive", "composition"]},
+    {"name": "interaction", "keywords": ["motion", "animation", "interaction", "gsap", "transition", "scroll"]},
+    {"name": "typography", "keywords": ["typography", "typeface", "font", "variable font"]},
+    {"name": "frontend", "keywords": ["react", "frontend", "typescript", "css", "component", "javascript", "open source"]},
+    {"name": "design_systems", "keywords": ["design system", "tokens", "accessibility", "ui kit", "pattern"]},
+    {"name": "ux_research", "keywords": ["ux research", "usability", "user research", "information architecture"]},
+    {"name": "branding", "keywords": ["branding", "brand identity", "editorial", "logo"]}
+  ],
+  "excludeDomains": ["bit.ly"],
+  "scoreThreshold": 75,
+  "confidenceThreshold": 0.65,
+  "preferFree": true
+}

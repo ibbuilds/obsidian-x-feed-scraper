@@ -1,0 +1,14 @@
+node_modules/
+*.db
+*.db-shm
+*.db-wal
+*.lock
+data/
+dist/
+.DS_Store
+.env
+.env.*
+!.env.example
+apps/obsidian-plugin/main.js
+coverage/
+*.log
