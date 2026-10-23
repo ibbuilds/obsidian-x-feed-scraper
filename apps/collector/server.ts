@@ -38,7 +38,9 @@ async function body(req: IncomingMessage): Promise<Record<string,unknown>> {
 export function startServer(config:ServerOptions):ReturnType<typeof createServer> {
   if (config.token.length<24) throw new Error("Set XFS_API_TOKEN to a random token of at least 24 characters");
   if (!Number.isInteger(config.port)||config.port<1024||config.port>65535) throw new Error("Invalid local port");
-  let paused=false;
+  const initialStore=new Store(config.db);
+  let paused=initialStore.paused();
+  initialStore.close();
   let busy=false;
   const refs=()=>referencesFromFile(config.references || (config.vault && existsSync(join(config.vault,"References.md")) ? join(config.vault,"References.md") : undefined));
   const sync=()=>{
@@ -68,6 +70,8 @@ export function startServer(config:ServerOptions):ReturnType<typeof createServer
           const status=url.searchParams.get("status")||undefined;
           const search=url.searchParams.get("q")||undefined;
           json(res,200,store.listSources(status,search,100));
+        } else if (req.method==="GET" && url.pathname==="/recommendations") {
+          json(res,200,store.recommendations());
         } else if (req.method==="GET" && url.pathname==="/posts") {
           json(res,200,store.listPosts(100));
         } else if (req.method==="GET" && url.pathname==="/history") {
@@ -77,9 +81,9 @@ export function startServer(config:ServerOptions):ReturnType<typeof createServer
           json(res,200,sync());
           return;
         } else if (req.method==="POST" && url.pathname==="/pause") {
-          paused=true;json(res,200,{paused});
+          paused=true;store.setPaused(paused);json(res,200,{paused});
         } else if (req.method==="POST" && url.pathname==="/resume") {
-          paused=false;json(res,200,{paused});
+          paused=false;store.setPaused(paused);json(res,200,{paused});
         } else if (req.method==="POST" && url.pathname==="/review") {
           const value=await body(req);
           const id=Number(value.id);
