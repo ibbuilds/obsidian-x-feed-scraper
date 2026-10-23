@@ -44,6 +44,11 @@ test("shipped Obsidian collector boots, authenticates and exports without changi
     const review=await fetch(url+"/review",{method:"POST",headers:{...auth,"content-type":"application/json"},
       body:JSON.stringify({id:github.id,decision:"approved",reason:"Human reviewed resource"})});
     assert.equal(review.status,200);
+    const fresh=await fetch(url+"/source?id="+github.id,{headers:auth});
+    assert.equal(fresh.status,200);
+    assert.equal((await fresh.json() as {status:string}).status,"approved");
+    assert.equal((await fetch(url+"/source?id=invalid",{headers:auth})).status,400);
+    assert.equal((await fetch(url+"/source?id=999999",{headers:auth})).status,404);
     const notes=readdirSync(join(vault,"X Feed Scraper","Approved"));
     assert.equal(notes.length,1);
     assert.equal(readFileSync(join(vault,"References.md"),"utf8"),references);
