@@ -73,13 +73,16 @@ const BASE = [
   "filters:",
   "  and:",
   '    - file.inFolder("X Feed Scraper")',
-  '    - type == "x-feed-source"',
+  '    - or:',
+  '        - type == "x-feed-source"',
+  '        - type == "x-feed-visual"',
   "views:",
   "  - type: table",
   '    name: "Candidates"',
   "    filters:",
   '      and:',
   '        - status != "approved"',
+  '        - type == "x-feed-source"',
   "    order:",
   "      - file.name",
   "      - category",
@@ -91,10 +94,19 @@ const BASE = [
   '    name: "Approved"',
   "    filters:",
   '      - status == "approved"',
+  '      - type == "x-feed-source"',
   "    order:",
   "      - file.name",
   "      - category",
   "      - score",
+  "  - type: table",
+  '    name: "Visual references"',
+  "    filters:",
+  '      - type == "x-feed-visual"',
+  "    order:",
+  "      - file.name",
+  "      - author",
+  "      - discovered_date",
   ""
 ].join("\n");
 export function exportToVault(dbPath:string,vaultPath:string): {created:number;unchanged:number;conflicts:number;skipped:number} {
@@ -104,6 +116,7 @@ export function exportToVault(dbPath:string,vaultPath:string): {created:number;u
   mkdirSync(join(folder,"Candidates"),{recursive:true});
   mkdirSync(join(folder,"Approved"),{recursive:true});
   mkdirSync(join(folder,"Reports"),{recursive:true});
+  mkdirSync(join(folder,"Visuals"),{recursive:true});
   const referencesFile=join(root,"References.md");
   const library=existsSync(referencesFile)?importReferences(readFileSync(referencesFile,"utf8")):new Set<string>();
   const store=new Store(dbPath);
@@ -136,6 +149,27 @@ export function exportToVault(dbPath:string,vaultPath:string): {created:number;u
         }
       }
     }
+    }
+    for(const visual of store.listVisualPosts(1000)){
+      const id=createHash("sha256").update(String(visual.connector)+"\0"+String(visual.id)).digest("hex").slice(0,20);
+      const images=JSON.parse(String(visual.images_json||"[]")) as unknown[];
+      const media=images.filter(x=>typeof x==="string"&&/^https?:\/\//i.test(x)).slice(0,12) as string[];
+      const text=[
+        "---","type: x-feed-visual",
+        "status: needs_review",
+        "post_url: "+yaml(String(visual.url)),
+        "author: "+yaml(String(visual.author)),
+        "discovered_date: "+String(visual.first_seen).slice(0,10),
+        "---","","# Visual reference pending review","",
+        "Original observation: [view post](<"+String(visual.url).replace(/[<>]/g,"")+">)","",
+        "Image links (not downloaded automatically):","",
+        ...media.map(link=>"- [Open image](<"+link.replace(/[<>]/g,"")+">)"),
+        "","No source project URL was observed. Do not infer one.",""
+      ].join("\n");
+      const resultType=putIfAbsent(join(folder,"Visuals",id+".md"),text);
+      if(resultType==="created")result.created++;
+      else if(resultType==="same")result.unchanged++;
+      else result.conflicts++;
     }
     const stats=store.stats();
     const lastRun=stats.lastRun as {id?:string;started_at?:string;status?:string}|null;
