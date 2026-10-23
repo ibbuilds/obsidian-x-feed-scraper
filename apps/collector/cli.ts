@@ -24,7 +24,7 @@ function show(value:unknown):void {console.log(JSON.stringify(value,null,2));}
 const HELP=[
   "X Feed Scraper (local-first, Node 22.16+)",
   "  sync --fixture tests/fixtures/posts.json [--vault /path/to/vault]",
-  "  status | sources [--status needs_review] [--search motion] | posts | history",
+  "  status | sources [--status needs_review] [--search motion] | posts | history | recommendations | report",
   "  review --id 1 --decision approved --reason 'Useful original resource'",
   "  enrich --limit 20           Explicit opt-in network metadata fetch",
   "  export --vault /path/to/vault",
@@ -63,6 +63,8 @@ async function main():Promise<void> {
       if (command==="status") show(store.stats());
       else if (command==="sources") show(store.listSources(option("status"),option("search"),Number(option("limit")||100)));
       else if (command==="posts") show(store.listPosts());
+      else if (command==="recommendations") show(store.recommendations());
+      else if (command==="report") show({stats:store.stats(),candidates:store.listSources(undefined,undefined,25),recommendations:store.recommendations(10)});
       else if (command==="history") show(store.history());
       else if (command==="review") {
         const decision=required("decision");
