@@ -42,6 +42,15 @@ export function parseFeed(xml:string, feedUrl:string):Post[] {
     const html=value(item.description??item.summary??item.content??item.encoded);
     const summary=html.replace(/<[^>]*>/g," ").replace(/&(?:nbsp|amp);/gi," ")
       .replace(/\s+/g," ").slice(0,3000);
+    const entryUrls=new Set<string>([url]);
+    for(const match of html.matchAll(/<a\b[^>]{0,2500}\bhref\s*=\s*(?:"([^"]{1,2000})"|'([^']{1,2000})')[^>]*>/gi)){
+      const href=match[1]||match[2];
+      try{
+        const candidate=normalizeUrl(new URL(href,url).href);
+        if(!isXUrl(candidate))entryUrls.add(candidate);
+      }catch{/* Ignore non-web or malformed targets. */}
+      if(entryUrls.size>=30)break;
+    }
     const guid=value(item.guid??item.id)||url;
     const id=createHash("sha256").update(feedUrl+"\0"+guid).digest("hex");
     if(seen.has(id))continue;
@@ -53,7 +62,7 @@ export function parseFeed(xml:string, feedUrl:string):Post[] {
       id,url,author:value(item.author??item.creator)||host,
       username:host,text:(title+" "+summary+" "+url).slice(0,5000),
       publishedAt:Number.isFinite(parsedDate)?new Date(parsedDate).toISOString():undefined,
-      urls:[url]
+      urls:[...entryUrls]
     });
   }
   return posts;
