@@ -47,7 +47,7 @@ export class Store {
     this.db.prepare("INSERT INTO runs (id,connector,started_at,status) VALUES (?,?,?,'running')").run(id,connector,new Date().toISOString());
     return id;
   }
-  finish(id: string, state: "success"|"failed", posts: number, sources: number, duplicates: number, error?: string): void {
+  finish(id: string, state: "success"|"failed"|"partial", posts: number, sources: number, duplicates: number, error?: string): void {
     const now = new Date().toISOString();
     this.db.prepare("UPDATE runs SET ended_at=?, status=?, posts_seen=?, sources_new=?, duplicates=?, error=? WHERE id=?")
       .run(now,state,posts,sources,duplicates,error || null,id);
