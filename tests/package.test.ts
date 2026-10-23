@@ -15,4 +15,10 @@ test("Obsidian distribution ships complete installable desktop plugin",()=>{
   assert.equal(manifest.isDesktopOnly,true);
   assert.equal(manifest.version,"0.2.0");
   assert.ok(statSync(archive).size>10000);
+  // Community plugin installers copy only these three standard assets.
+  // The compiled main.js must therefore embed the collector and default profile.
+  const standalone=Buffer.from(archiveEntries["main.js"]).toString("utf8");
+  assert.ok(standalone.includes("collector-"),"main.js lacks embedded collector extraction");
+  assert.ok(standalone.includes("design-"),"main.js lacks embedded profile extraction");
+  assert.ok(standalone.length>50000,"main.js is unexpectedly small for a bundled runtime");
 });
