@@ -163,7 +163,7 @@ export class Store {
     return Math.max(-8,Math.min(8,Number(row.boost || 0)*2));
   }
   stats(): Row {
-    const counts = this.db.prepare("SELECT (SELECT count(*) FROM posts) posts,(SELECT count(*) FROM sources) sources,(SELECT count(*) FROM post_sources) links,(SELECT count(*) FROM sources WHERE status='high_quality') high_quality,(SELECT count(*) FROM sources WHERE status='needs_review') needs_review,(SELECT count(*) FROM sources WHERE status='approved') approved,(SELECT count(*) FROM errors) errors").get() as Row;
+    const counts = this.db.prepare("SELECT (SELECT count(*) FROM posts) posts,(SELECT count(*) FROM posts p WHERE p.images_json != '[]' AND NOT EXISTS (SELECT 1 FROM post_sources ps WHERE ps.connector=p.connector AND ps.post_id=p.id)) visuals,(SELECT count(*) FROM sources) sources,(SELECT count(*) FROM post_sources) links,(SELECT count(*) FROM sources WHERE status='high_quality') high_quality,(SELECT count(*) FROM sources WHERE status='needs_review') needs_review,(SELECT count(*) FROM sources WHERE status='approved') approved,(SELECT count(*) FROM errors) errors").get() as Row;
     const run = this.db.prepare("SELECT id,connector,started_at,ended_at,status,posts_seen,sources_new,duplicates FROM runs ORDER BY started_at DESC LIMIT 1").get() || null;
     return {...counts,lastRun:run,checkpoint:this.db.prepare("SELECT * FROM checkpoints ORDER BY updated_at DESC LIMIT 1").get() || null};
   }
