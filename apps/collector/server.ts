@@ -134,7 +134,22 @@ export function startServer(config:ServerOptions):ReturnType<typeof createServer
       }
       const store=new Store(config.db);
       try{
-        if(req.method==="GET"&&url.pathname==="/source"){
+        if(req.method==="GET"&&url.pathname==="/diagnostics"){
+          const row=store.db.prepare("PRAGMA quick_check").get() as Record<string,unknown>|undefined;
+          const integrity=String(row?.quick_check||"unknown");
+          const referencePath=config.references||(config.vault?join(config.vault,"References.md"):undefined);
+          json(res,200,{
+            nodeVersion:process.versions.node,
+            sqliteIntegrity:integrity,
+            vaultPresent:Boolean(config.vault&&existsSync(config.vault)),
+            referencesPresent:Boolean(referencePath&&existsSync(referencePath)),
+            collectorInput:source(),
+            personalizedXFeedAvailable:false,
+            readyForManualImport:integrity==="ok",
+            readyForScheduledDiscovery:integrity==="ok"&&Boolean(config.feed),
+            nextStep:config.feed?"Verify the authorized source in /history":"Configure a permitted RSS URL or import observations manually"
+          });
+        }else if(req.method==="GET"&&url.pathname==="/source"){
           const id=Number(url.searchParams.get("id"));
           if(!Number.isSafeInteger(id)||id<1)json(res,400,{error:"Invalid source ID"});
           else{
