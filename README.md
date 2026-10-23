@@ -37,10 +37,12 @@ The collector uses no paid API or runtime npm dependency. Obsidian plugin buildi
     npm run cli -- status
     npm run cli -- sources
     npm run cli -- history
+    npm run cli -- recommendations
+    npm run cli -- report
 
 Default DB: ./data/x-feed.db (ignored by Git). Pass --db /path/to/local.db to change.
 Pass --profile ./profiles/design.json for the initial design profile or create your own.
-No real X scraping occurs.
+No real X scraping occurs. Recommendations show links for manual likes/follows only.
 
 ## Obsidian integration
 
@@ -68,7 +70,7 @@ Generate a local token (keep it private), then start the local collector:
 
 In the plugin settings, paste the same token. It is held in memory **only for this session**.
 The plugin can display status, sources, recommended candidates, approval/rejection and
-trigger sync/pause/resume. The collector binds 127.0.0.1:47321 only. Do not expose it publicly.
+trigger sync/pause/resume. Pause state persists across restarts. The collector binds 127.0.0.1:47321 only. Do not expose it publicly.
 
 With no --fixture, the service can show stored results but cannot sync; no real X connector
 is claimed. Set --interval 60 to reprocess a permitted, configured input hourly; fixture
