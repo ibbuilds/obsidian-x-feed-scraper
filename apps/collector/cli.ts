@@ -78,6 +78,10 @@ async function main():Promise<void>{
       console.log("XFS_READY_PORT="+actual);
     });
     server.on("error",e=>{console.error("Collector service failed: "+e.message);process.exitCode=1;});
+    if(option("managed")==="true"){
+      process.stdin.on("end",()=>server.close(()=>process.exit(0)));
+      process.stdin.resume();
+    }
     process.on("SIGINT",()=>server.close(()=>process.exit(0)));
     process.on("SIGTERM",()=>server.close(()=>process.exit(0)));
   }else{
