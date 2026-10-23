@@ -1,95 +1,60 @@
-# X Feed Scraper
+# X Feed Scraper for Obsidian
 
-Local-first discovery, deduplication, evaluation and curation of source links from an
-**authorized post connector**. Designed to export quality candidates to Obsidian and
-make them searchable through an existing Obsidian MCP.
+A local-first desktop Obsidian plugin that discovers, deduplicates, scores, reviews and organizes useful resources. It runs a bundled Node.js collector locally, stores observations in SQLite, and generates structured Markdown plus an Obsidian Base.
 
-> **Provider status:** the authenticated X "For you" feed is **not available or verified**.
-> Demo fixtures are **not** a substitute for this feed. See docs/x-access.md.
+**Version: 0.2.0.** The packaged collector passes CI integration tests. The real personalized X **For You** feed is **NOT CONNECTED**, because no authorized method for it has been verified. Public RSS/Atom feeds and user-supplied observations are distinct connectors; they are never represented as your X For You recommendations.
 
-## What works
+## Install in Obsidian Desktop
 
-- Typed ingestion of JSON post fixtures including text, quoted links, media references, author and post URLs.
-- Normalized URL extraction, tracking removal, relational deduplication and observed-run history in SQLite.
-- Pluggable category profiles, evidence-aware quality scoring (score and confidence), persisted reviews.
-- Manual opt-in public metadata discovery with network safety checks.
-- Read-only use of your existing References.md as a baseline; create-only Obsidian candidate and approved notes.
-- Native Obsidian Bases view and minimal review plugin, with a protected local HTTP service.
-- No commercial AI dependency, hidden telemetry, X password or automated X engagement.
+1. Install Node.js 22.16+ and Obsidian Desktop 1.8+.
+2. Download the ZIP from the successful **x-feed-scraper-obsidian** GitHub Actions artifact: https://github.com/ibbuilds/obsidian-x-feed-scraper/actions/workflows/ci.yml
+3. Extract the five ZIP files directly into the vault plugin folder (usually <vault>/.obsidian/plugins/x-feed-scraper/): main.js, manifest.json, collector.cjs, design.json and styles.css.
+4. In Obsidian Settings > Community plugins, reload and enable X Feed Scraper. Open the ribbon panel.
+5. The panel auto-starts the packaged local engine with a random temporary token and an OS-selected loopback port. There is no manual daemon or token setup. If Node is not on your GUI application's PATH, specify the absolute Node.js executable in plugin settings.
+6. Configure an authorized public RSS or Atom feed URL if you want periodic collection; the default interval is 60 minutes. Leave it blank for manual observations. Press Restart collector after settings changes.
+7. Use Import observations for post URLs and the corresponding text containing external resource URLs, then review candidates and opt in to metadata enrichment. Approved sources can be added to References.md only via explicit confirmation and timestamped backup.
 
-## Requirements
+**No real user X feed has been accessed, and the actual desktop Obsidian installation still needs user-device smoke testing.** Do not paste X cookies, passwords, sessions or secrets into this project.
 
-Node.js >=22.16 (the built-in node:sqlite and --experimental-strip-types are used).
-The collector uses no paid API or runtime npm dependency. Obsidian plugin building needs npm dependencies.
+## Current capabilities
 
-## Install and test
+- Native Obsidian sidebar, search and status filters, run history, review reasons, candidates and manually suggested posts/authors.
+- SQLite persistence, deduplication across observations, checkpoints and preference feedback.
+- Configurable design profile; separate heuristic score and evidence confidence. High scores do not auto-approve sources.
+- Optional authorized RSS/Atom syncing while Obsidian runs, and separately labeled local fixture/manual import.
+- Explicit, opt-in public website metadata enrichment (private destinations and X automation blocked).
+- Generate candidates, approvals, reports and Sources.base under the X Feed Scraper vault folder.
+- Protect References.md by performing live duplicate checks, creating a full backup, then using Obsidian's atomic Vault.process only after user approval.
+- No paid AI, automated X likes/follows, telemetry or internet-facing service.
+
+The Obsidian plugin requires a local Node.js installation but does not require a separately configured service. SQLite for plugin-managed mode is stored outside the synced vault under ~/.x-feed-scraper/<vault-hash>/library.db. Candidate notes live inside the vault and are accessible to existing Obsidian MCP integrations.
+
+## Develop and test
 
     git clone https://github.com/ibbuilds/obsidian-x-feed-scraper.git
     cd obsidian-x-feed-scraper
     npm install
-    npm test
     npm run check
-    npm run build
+    npm run package
+    npm test
 
-## First local run (synthetic fixtures)
+The distribution ZIP is at dist/obsidian-x-feed-scraper.zip. GitHub CI runs typecheck, packaging, unit tests and a packaged collector smoke test on a synthetic vault.
+
+The collector also runs without Obsidian, allowing external OS scheduling:
 
     npm run sync -- --fixture tests/fixtures/posts.json
-    npm run cli -- status
     npm run cli -- sources
-    npm run cli -- history
-    npm run cli -- recommendations
-    npm run cli -- report
+    npm run cli -- status
 
-Default DB: ./data/x-feed.db (ignored by Git). Pass --db /path/to/local.db to change.
-Pass --profile ./profiles/design.json for the initial design profile or create your own.
-No real X scraping occurs. Recommendations show links for manual likes/follows only.
+For a public feed instead, use the --feed option with a permitted RSS/Atom URL, and optionally --vault with an absolute path. The standalone database defaults to ./data/x-feed.db.
 
-## Obsidian integration
+## Detailed guides
 
-To compare against your real library and create new notes:
+- docs/plugin-guide.md — installation, workflow and real-device smoke-test checklist.
+- docs/architecture.md — data model and lifecycle.
+- docs/security.md — privacy, network and vault integrity.
+- docs/profiles.md — research category profiles and scoring.
+- docs/x-access.md — X permissions and For You blocker.
+- CONTRIBUTING.md and LICENSE — open-source development and MIT license.
 
-    npm run sync -- --fixture tests/fixtures/posts.json --vault "/absolute/path/to/your/vault"
-    npm run cli -- sources --status needs_review
-    npm run cli -- review --id 1 --decision approved --reason "Validated source"
-    npm run cli -- export --vault "/absolute/path/to/your/vault"
-
-The collector reads <vault>/References.md but **never edits it**. It creates files in
-X Feed Scraper/Candidates and X Feed Scraper/Approved, run reports under X Feed Scraper/Reports,
-plus X Feed Scraper/Sources.base.
-Every export rechecks References.md for duplicates. Conflicting, manually edited notes are never replaced. Approved notes still require a
-separate explicit human decision before entering References.md.
-
-## Local plugin / service (desktop Obsidian)
-
-After npm run build, copy apps/obsidian-plugin/main.js and manifest.json to
-<your vault>/.obsidian/plugins/x-feed-scraper/ and enable the community plugin.
-
-Generate a local token (keep it private), then start the local collector:
-
-    export XFS_API_TOKEN="$(node -e "process.stdout.write(require('node:crypto').randomBytes(24).toString('hex'))")"
-    npm run serve -- --fixture tests/fixtures/posts.json --vault "/absolute/path/to/your/vault"
-
-In the plugin settings, paste the same token. It is held in memory **only for this session**.
-The plugin can display status, sources, recommended candidates, approval/rejection and
-trigger sync/pause/resume. Pause state persists across restarts. The collector binds 127.0.0.1:47321 only. Do not expose it publicly.
-
-With no --fixture, the service can show stored results but cannot sync; no real X connector
-is claimed. Set --interval 60 to reprocess a permitted, configured input hourly; fixture
-mode simply replays the same local data idempotently.
-
-## Optional public metadata enrichment
-
-    npm run cli -- enrich --limit 20 --vault "/absolute/path/to/your/vault"
-
-This explicitly makes network requests to linked public pages (not the X feed) to discover
-titles/descriptions. It is OFF by default. It does not prove design quality, licensing or price.
-
-## Documentation
-
-- docs/architecture.md — data model, behavior and security boundaries.
-- docs/profiles.md — build reusable research profiles.
-- docs/x-access.md — verification of X dependency and limitations.
-- CONTRIBUTING.md — development rules.
-- LICENSE — MIT.
-
-Version 0.1.0 is a verifiable local pipeline, **not** a working personalized X scraper.
+Current project blockers: https://github.com/ibbuilds/obsidian-x-feed-scraper/issues/2 (actual X For You feed) and https://github.com/ibbuilds/obsidian-x-feed-scraper/issues/3 (real Obsidian desktop validation).

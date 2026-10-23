@@ -2,7 +2,7 @@ import {DatabaseSync} from "node:sqlite";
 import {mkdirSync} from "node:fs";
 import {dirname} from "node:path";
 import {randomUUID} from "node:crypto";
-import type {Evaluation, Metadata, Post, Source, Status} from "../core/types.ts";
+import type {Access, Evaluation, Metadata, Post, Source, Status} from "../core/types.ts";
 import {normalizeUrl} from "../core/url.ts";
 
 type Row = Record<string, unknown>;
@@ -36,6 +36,10 @@ export class Store {
       "CREATE INDEX IF NOT EXISTS idx_sightings_post ON sightings(connector,post_id);" +
       "CREATE INDEX IF NOT EXISTS idx_post_sources_source ON post_sources(source_id);"
     );
+    const reviewColumns=this.db.prepare("PRAGMA table_info(reviews)").all() as Array<{name:string}>;
+    if(!reviewColumns.some(c=>c.name==="access")){
+      this.db.exec("ALTER TABLE reviews ADD COLUMN access TEXT");
+    }
   }
   close(): void {this.db.close();}
   begin(connector: string): string {
@@ -119,16 +123,50 @@ export class Store {
     const q = search ? "%" + search.slice(0,100) + "%" : null;
     return (this.db.prepare(query).all(status || null,status || null,q,q,q,q,safeLimit) as Row[]).map(asSource);
   }
+  pendingForEnrichment(limit=20):Source[] {
+    const safeLimit=Math.max(1,Math.min(100,Math.floor(limit)));
+    const rows=this.db.prepare(
+      "SELECT s.*, "+
+      "(SELECT p.url FROM post_sources ps JOIN posts p ON p.connector=ps.connector AND p.id=ps.post_id WHERE ps.source_id=s.id LIMIT 1) post_url,"+
+      "(SELECT p.author FROM post_sources ps JOIN posts p ON p.connector=ps.connector AND p.id=ps.post_id WHERE ps.source_id=s.id LIMIT 1) author "+
+      "FROM sources s WHERE s.status NOT IN ('approved','rejected') "+
+      "AND s.category != 'existing_reference' AND (s.description IS NULL OR s.description='') "+
+      "ORDER BY s.score DESC LIMIT ?"
+    ).all(safeLimit) as Row[];
+    return rows.map(asSource);
+  }
+  listSourcesPage(offset=0,limit=200):Source[] {
+    const safeOffset=Math.max(0,Math.floor(offset));
+    const safeLimit=Math.max(1,Math.min(500,Math.floor(limit)));
+    const rows=this.db.prepare(
+      "SELECT s.*,"+
+      "(SELECT p.url FROM post_sources ps JOIN posts p ON p.connector=ps.connector AND p.id=ps.post_id WHERE ps.source_id=s.id LIMIT 1) post_url,"+
+      "(SELECT p.author FROM post_sources ps JOIN posts p ON p.connector=ps.connector AND p.id=ps.post_id WHERE ps.source_id=s.id LIMIT 1) author "+
+      "FROM sources s ORDER BY s.id ASC LIMIT ? OFFSET ?"
+    ).all(safeLimit,safeOffset) as Row[];
+    return rows.map(asSource);
+  }
+  listVisualPosts(limit=200):Row[] {
+    return this.db.prepare(
+      "SELECT p.id,p.connector,p.url,p.author,p.username,p.images_json,p.first_seen "+
+      "FROM posts p WHERE p.images_json != '[]' AND NOT EXISTS "+
+      "(SELECT 1 FROM post_sources ps WHERE ps.connector=p.connector AND ps.post_id=p.id) "+
+      "ORDER BY p.last_seen DESC LIMIT ?"
+    ).all(Math.max(1,Math.min(1000,Math.floor(limit)))) as Row[];
+  }
   listPosts(limit=100): Row[] {return this.db.prepare("SELECT id,connector,url,author,username,text,first_seen,last_seen,processing_status FROM posts ORDER BY last_seen DESC LIMIT ?").all(Math.min(500,Math.max(1,limit))) as Row[];}
-  review(id: number, decision: "approved"|"rejected"|"needs_review"|"excellent", reason: string): Source {
+  review(id: number, decision: "approved"|"rejected"|"needs_review"|"excellent", reason: string, access?:Access): Source {
     if (!reason.trim()) throw new Error("Review reason is required");
+    if(access && !["unknown","free","open_source","freemium","paid"].includes(access)) throw new Error("Invalid access classification");
     const source = this.getSource(id);
     if (!source) throw new Error("Source not found");
     const status = decision === "excellent" ? "approved" : decision;
     this.db.exec("BEGIN IMMEDIATE");
     try {
-      this.db.prepare("INSERT INTO reviews(source_id,decision,reason,reviewed_at) VALUES(?,?,?,?)").run(id,decision,reason.slice(0,1000),new Date().toISOString());
-      this.db.prepare("UPDATE sources SET status=?,updated_at=? WHERE id=?").run(status,new Date().toISOString(),id);
+      this.db.prepare("INSERT INTO reviews(source_id,decision,reason,reviewed_at,access) VALUES(?,?,?,?,?)")
+        .run(id,decision,reason.slice(0,1000),new Date().toISOString(),access||null);
+      this.db.prepare("UPDATE sources SET status=?,access=COALESCE(?,access),updated_at=? WHERE id=?")
+        .run(status,access||null,new Date().toISOString(),id);
       this.db.exec("COMMIT");
     } catch (e) {this.db.exec("ROLLBACK");throw e;}
     return this.getSource(id)!;
@@ -144,7 +182,7 @@ export class Store {
     return Math.max(-8,Math.min(8,Number(row.boost || 0)*2));
   }
   stats(): Row {
-    const counts = this.db.prepare("SELECT (SELECT count(*) FROM posts) posts,(SELECT count(*) FROM sources) sources,(SELECT count(*) FROM post_sources) links,(SELECT count(*) FROM sources WHERE status='high_quality') high_quality,(SELECT count(*) FROM sources WHERE status='needs_review') needs_review,(SELECT count(*) FROM sources WHERE status='approved') approved,(SELECT count(*) FROM errors) errors").get() as Row;
+    const counts = this.db.prepare("SELECT (SELECT count(*) FROM posts) posts,(SELECT count(*) FROM posts p WHERE p.images_json != '[]' AND NOT EXISTS (SELECT 1 FROM post_sources ps WHERE ps.connector=p.connector AND ps.post_id=p.id)) visuals,(SELECT count(*) FROM sources) sources,(SELECT count(*) FROM post_sources) links,(SELECT count(*) FROM sources WHERE status='high_quality') high_quality,(SELECT count(*) FROM sources WHERE status='needs_review') needs_review,(SELECT count(*) FROM sources WHERE status='approved') approved,(SELECT count(*) FROM errors) errors").get() as Row;
     const run = this.db.prepare("SELECT id,connector,started_at,ended_at,status,posts_seen,sources_new,duplicates FROM runs ORDER BY started_at DESC LIMIT 1").get() || null;
     return {...counts,lastRun:run,checkpoint:this.db.prepare("SELECT * FROM checkpoints ORDER BY updated_at DESC LIMIT 1").get() || null};
   }

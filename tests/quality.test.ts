@@ -32,3 +32,13 @@ test("paid does not equal open-source; references are not rediscovered",()=>{
   assert.equal(duplicate.category,"existing_reference");
   assert.equal(duplicate.score,0);
 });
+
+test("rich verified metadata can be shortlisted without claiming aesthetic certainty",()=>{
+  const e=evaluate("https://example.org/demo","Motion interaction animation demos","Motion interaction animation",
+    {title:"Professional motion interaction examples",
+      description:"Substantial demonstrations of motion, interaction and animation for production applications, with clear live examples and descriptions.",
+      contentType:"text/html"},p);
+  assert.equal(e.status,"high_quality");
+  assert.ok(e.confidence>=p.confidenceThreshold);
+  assert.ok(e.reasons.some(reason=>reason.includes("human review")));
+});

@@ -1,5 +1,5 @@
-import {openSync,closeSync,readFileSync,unlinkSync,statSync,mkdirSync} from "node:fs";
-import {dirname,join} from "node:path";
+import {readFileSync} from "node:fs";
+import {acquireLock} from "./lock.ts";
 import {normalizeUrl,extractUrls,isXUrl} from "./url.ts";
 import {evaluate} from "../quality/evaluate.ts";
 import {fetchPublicMetadata} from "../connectors/metadata.ts";
@@ -25,22 +25,12 @@ export function deriveTitle(url: string):string {
 }
 export interface Result {runId:string;posts:number;newSources:number;duplicates:number;errors:number;visualOnly:number}
 export function ingest(dbPath: string, posts: Post[], profile: Profile, connector = "fixture", references: ReadonlySet<string> = new Set()): Result {
-  mkdirSync(dirname(dbPath), {recursive:true});
-  const lockFile = dbPath + ".lock";
-  let lock: number;
-  try {lock = openSync(lockFile,"wx",0o600);}
-  catch {
-    try {
-      if (Date.now()-statSync(lockFile).mtimeMs > 6*60*60*1000) {
-        unlinkSync(lockFile);
-        lock = openSync(lockFile,"wx",0o600);
-      } else throw new Error("Another collector is active");
-    } catch {throw new Error("Another collector is active");}
-  }
-  const store = new Store(dbPath);
+  const release=acquireLock(dbPath+".lock");
+  let store: Store | undefined;
   let runId = "";
   const result:Result = {runId:"",posts:0,newSources:0,duplicates:0,errors:0,visualOnly:0};
   try {
+    store=new Store(dbPath);
     runId = store.begin(connector);result.runId=runId;
     for (const post of posts) {
       store.db.exec("SAVEPOINT item");
@@ -68,20 +58,17 @@ export function ingest(dbPath: string, posts: Post[], profile: Profile, connecto
     store.finish(runId,"success",result.posts,result.newSources,result.duplicates);
     return result;
   } catch (e) {
-    if (runId) store.finish(runId,"failed",result.posts,result.newSources,result.duplicates,e instanceof Error?e.message:"unknown");
+    if (runId && store) store.finish(runId,"failed",result.posts,result.newSources,result.duplicates,e instanceof Error?e.message:"unknown");
     throw e;
   } finally {
-    store.close();
-    closeSync(lock);
-    try {unlinkSync(lockFile);} catch {}
+    try{store?.close();}finally{release();}
   }
 }
 export async function enrich(dbPath: string, profile: Profile, references: ReadonlySet<string>, limit=20):Promise<{checked:number;updated:number;failed:number}> {
   const store = new Store(dbPath);
   const results={checked:0,updated:0,failed:0};
   try {
-    const pending = store.listSources(undefined,undefined,Math.min(100,limit))
-      .filter(s=>s.status!=="approved" && s.status!=="rejected");
+    const pending = store.pendingForEnrichment(limit);
     for (const source of pending) {
       results.checked++;
       try {

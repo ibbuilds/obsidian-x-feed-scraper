@@ -107,3 +107,98 @@ test("pause state and manual recommendation queue persist across restarts",()=>{
     reopened.close();
   } finally{rmSync(root,{recursive:true,force:true});}
 });
+
+test("export includes sources beyond the first 500 records",()=>{
+  const root=mkdtempSync(join(tmpdir(),"xfs-large-"));
+  const vault=join(root,"vault"),db=join(root,"db.sqlite");
+  mkdirSync(vault);
+  try{
+    const many=Array.from({length:510},(_,index)=>({
+      id:"entry-"+index,url:"https://x.com/test/status/"+(index+1),
+      author:"Study",username:"study",text:"Great motion design article "+
+        "https://example.org/motion/design/"+index
+    }));
+    const ingested=ingest(db,many,profile,"fixture");
+    assert.equal(ingested.newSources,510);
+    const result=exportToVault(db,vault);
+    assert.ok(result.created>=511);
+    assert.equal(readdirSync(join(vault,"X Feed Scraper","Candidates")).length,510);
+  }finally{rmSync(root,{recursive:true,force:true});}
+});
+test("approved files retire only untouched generated candidates",()=>{
+  const root=mkdtempSync(join(tmpdir(),"xfs-promotion-"));
+  const vault=join(root,"vault"),db=join(root,"db.sqlite");
+  mkdirSync(vault);
+  try{
+    ingest(db,fixture,profile);
+    exportToVault(db,vault);
+    const candidates=join(vault,"X Feed Scraper","Candidates");
+    const store=new Store(db);
+    const selected=store.listSources().find(s=>s.url.includes("github.com"))!;
+    const candidateName=readdirSync(candidates).find(name=>
+      readFileSync(join(candidates,name),"utf8").includes(selected.url))!;
+    assert.ok(candidateName);
+    store.review(selected.id,"approved","Verified useful");
+    store.close();
+    const result=exportToVault(db,vault);
+    assert.equal(existsSync(join(candidates,candidateName)),false);
+    assert.equal(readdirSync(join(vault,"X Feed Scraper","Approved")).length,1);
+    assert.ok(result.created>0);
+  }finally{rmSync(root,{recursive:true,force:true});}
+});
+test("edited candidate notes are never deleted during approval",()=>{
+  const root=mkdtempSync(join(tmpdir(),"xfs-edits-"));
+  const vault=join(root,"vault"),db=join(root,"db.sqlite");
+  mkdirSync(vault);
+  try{
+    ingest(db,fixture,profile);
+    exportToVault(db,vault);
+    const candidates=join(vault,"X Feed Scraper","Candidates");
+    const store=new Store(db);
+    const selected=store.listSources().find(s=>s.url.includes("github.com"))!;
+    const oldName=readdirSync(candidates).find(name=>
+      readFileSync(join(candidates,name),"utf8").includes(selected.url))!;
+    const path=join(candidates,oldName);
+    const modified=readFileSync(path,"utf8")+"\nPersonal note\n";
+    writeFileSync(path,modified);
+    store.review(selected.id,"approved","Checked");
+    store.close();
+    const result=exportToVault(db,vault);
+    assert.ok(result.conflicts>=1);
+    assert.equal(readFileSync(path,"utf8"),modified);
+  }finally{rmSync(root,{recursive:true,force:true});}
+});
+
+test("public metadata enrichment excludes approved and existing-library sources",()=>{
+  const root=mkdtempSync(join(tmpdir(),"xfs-enrichment-"));
+  const db=join(root,"db.sqlite");
+  try{
+    ingest(db,fixture,profile,"fixture",new Set(["https://motion.dev/docs"]));
+    const store=new Store(db);
+    const items=store.listSources();
+    const candidate=items.find(s=>s.url.includes("github.com"))!;
+    store.review(candidate.id,"approved","Reviewed");
+    const pending=store.pendingForEnrichment(20);
+    assert.ok(pending.every(s=>s.status!=="approved" && s.category!=="existing_reference"));
+    assert.ok(pending.length>=1);
+    store.close();
+  }finally{rmSync(root,{recursive:true,force:true});}
+});
+
+test("manual access classification and audit survive SQLite restarts",()=>{
+ const root=mkdtempSync(join(tmpdir(),"xfs-access-"));const db=join(root,"library.db");
+ try{
+   ingest(db,fixture,profile);
+   const store=new Store(db);
+   const resource=store.listSources().find(s=>s.url.includes("motion.dev"))!;
+   const reviewed=store.review(resource.id,"approved","Free tier checked manually","freemium");
+   assert.equal(reviewed.access,"freemium");
+   const audits=store.db.prepare("SELECT decision,access FROM reviews WHERE source_id=?").all(resource.id) as Array<{decision:string;access:string}>;
+   assert.equal(audits.at(-1)?.access,"freemium");
+   store.close();
+   const after=new Store(db);
+   assert.equal(after.getSource(resource.id)?.access,"freemium");
+   assert.throws(()=>after.review(resource.id,"approved","Bad field","pirated" as never),/Invalid access/);
+   after.close();
+ }finally{rmSync(root,{recursive:true,force:true});}
+});

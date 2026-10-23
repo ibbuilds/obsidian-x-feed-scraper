@@ -1,5 +1,5 @@
 import {createHash, randomUUID} from "node:crypto";
-import {existsSync, mkdirSync, readFileSync, renameSync, writeFileSync, unlinkSync} from "node:fs";
+import {existsSync, mkdirSync, readFileSync, linkSync, writeFileSync, unlinkSync} from "node:fs";
 import {join, resolve} from "node:path";
 import {Store} from "../storage/store.ts";
 import type {Source} from "./types.ts";
@@ -23,12 +23,15 @@ export function renderSource(source: Source): string {
     "score: " + source.score,
     "confidence: " + source.confidence,
     "discovered: " + yaml(source.firstSeen),
+    "discovered_date: " + source.firstSeen.slice(0,10),
+    "free: " + (source.access==="free"||source.access==="open_source"?"true":source.access==="paid"?"false":"null"),
+    "open_source: " + (source.access==="open_source"?"true":"null"),
     "author: " + yaml(source.author || ""),
     "post_url: " + yaml(source.postUrl || ""),
     "---", "",
     "# " + label, "",
-    "Source: [" + label + "](" + url + ")",
-    source.postUrl ? "Discovered in: [original post](" + source.postUrl.replace(/[<>]/g,"") + ")" : "",
+    "Source: [" + label + "](<" + url + ">)",
+    source.postUrl ? "Discovered in: [original post](<" + source.postUrl.replace(/[<>]/g,"") + ">)" : "",
     "",
     "## Evaluation", "",
     ...source.reasons.map(r=>"- " + oneLine(r,300)),
@@ -37,29 +40,49 @@ export function renderSource(source: Source): string {
     ""
   ].filter((line,index,all)=>index!==all.length-1 || line!=="").join("\n")+"\n";
 }
-function putIfAbsent(path: string, content: string): "created"|"same"|"conflict" {
-  if (existsSync(path)) return readFileSync(path,"utf8")===content ? "same":"conflict";
-  const temporary=path+".tmp-"+randomUUID();
-  try {
-    writeFileSync(temporary,content,{encoding:"utf8",flag:"wx",mode:0o600});
-    // Because the collector is single-writer and these paths are dedicated to generated notes,
-    // a pre-existing file is never replaced, even if another process wrote it.
-    if (existsSync(path)) return "conflict";
-    renameSync(temporary,path);
-    return "created";
-  } finally {if (existsSync(temporary)) unlinkSync(temporary);}
+/** Atomic create-only promotion; never overwrites an existing or edited vault note. */
+function putIfAbsent(path:string,content:string):"created"|"same"|"conflict"{
+  if(existsSync(path))return readFileSync(path,"utf8")===content?"same":"conflict";
+  const temp=path+".tmp-"+randomUUID();
+  try{
+    writeFileSync(temp,content,{encoding:"utf8",flag:"wx",mode:0o600});
+    try{
+      // Hard-link is an atomic create-only operation (EEXIST protects user files).
+      linkSync(temp,path);
+      return "created";
+    }catch(e){
+      const code=(e as NodeJS.ErrnoException).code;
+      if(code==="EEXIST")return readFileSync(path,"utf8")===content?"same":"conflict";
+      if(["EPERM","ENOTSUP","EOPNOTSUPP"].includes(code||"")){
+        // Some filesystems do not support hard links; exclusive write still never clobbers.
+        try{
+          writeFileSync(path,content,{flag:"wx",mode:0o600});
+          return "created";
+        }catch(fallback){
+          if((fallback as NodeJS.ErrnoException).code==="EEXIST"){
+            return readFileSync(path,"utf8")===content?"same":"conflict";
+          }
+          throw fallback;
+        }
+      }
+      throw e;
+    }
+  }finally{if(existsSync(temp))unlinkSync(temp);}
 }
 const BASE = [
   "filters:",
   "  and:",
   '    - file.inFolder("X Feed Scraper")',
-  '    - type == "x-feed-source"',
+  '    - or:',
+  '        - type == "x-feed-source"',
+  '        - type == "x-feed-visual"',
   "views:",
   "  - type: table",
   '    name: "Candidates"',
   "    filters:",
   '      and:',
   '        - status != "approved"',
+  '        - type == "x-feed-source"',
   "    order:",
   "      - file.name",
   "      - category",
@@ -70,11 +93,22 @@ const BASE = [
   "  - type: table",
   '    name: "Approved"',
   "    filters:",
-  '      - status == "approved"',
+  "      and:",
+  '        - status == "approved"',
+  '        - type == "x-feed-source"',
   "    order:",
   "      - file.name",
   "      - category",
   "      - score",
+  "  - type: table",
+  '    name: "Visual references"',
+  "    filters:",
+  "      and:",
+  '        - type == "x-feed-visual"',
+  "    order:",
+  "      - file.name",
+  "      - author",
+  "      - discovered_date",
   ""
 ].join("\n");
 export function exportToVault(dbPath:string,vaultPath:string): {created:number;unchanged:number;conflicts:number;skipped:number} {
@@ -84,13 +118,16 @@ export function exportToVault(dbPath:string,vaultPath:string): {created:number;u
   mkdirSync(join(folder,"Candidates"),{recursive:true});
   mkdirSync(join(folder,"Approved"),{recursive:true});
   mkdirSync(join(folder,"Reports"),{recursive:true});
+  mkdirSync(join(folder,"Visuals"),{recursive:true});
   const referencesFile=join(root,"References.md");
   const library=existsSync(referencesFile)?importReferences(readFileSync(referencesFile,"utf8")):new Set<string>();
   const store=new Store(dbPath);
   const result={created:0,unchanged:0,conflicts:0,skipped:0};
   try {
-    const all=store.listSources(undefined,undefined,500);
-    for (const source of all) {
+    for(let offset=0;;offset+=200){
+      const page=store.listSourcesPage(offset,200);
+      if(page.length===0)break;
+    for (const source of page) {
       if (library.has(source.url) || source.status==="rejected" || source.category==="existing_reference" ||
           (source.category==="uncategorized" && source.status!=="approved")) {
         result.skipped++;continue;
@@ -102,7 +139,39 @@ export function exportToVault(dbPath:string,vaultPath:string): {created:number;u
       if (value==="created") result.created++;
       else if (value==="same") result.unchanged++;
       else result.conflicts++;
-      // Never delete an old candidate note. Manual edits and previous review state survive.
+      // Only discard an unmodified generated candidate once an approved file exists.
+      if(source.status==="approved" && value!=="conflict"){
+        const oldFile=join(folder,"Candidates",shortId+".md");
+        if(existsSync(oldFile)){
+          const oldContent=readFileSync(oldFile,"utf8");
+          const generated=["discovered","pending_analysis","evaluated","high_quality","needs_review"]
+            .some(status=>oldContent===renderSource({...source,status:status as Source["status"]}));
+          if(generated)unlinkSync(oldFile);
+          else result.conflicts++; // Edited candidate intentionally remains untouched.
+        }
+      }
+    }
+    }
+    for(const visual of store.listVisualPosts(1000)){
+      const id=createHash("sha256").update(String(visual.connector)+"\0"+String(visual.id)).digest("hex").slice(0,20);
+      const images=JSON.parse(String(visual.images_json||"[]")) as unknown[];
+      const media=images.filter(x=>typeof x==="string"&&/^https?:\/\//i.test(x)).slice(0,12) as string[];
+      const text=[
+        "---","type: x-feed-visual",
+        "status: needs_review",
+        "post_url: "+yaml(String(visual.url)),
+        "author: "+yaml(String(visual.author)),
+        "discovered_date: "+String(visual.first_seen).slice(0,10),
+        "---","","# Visual reference pending review","",
+        "Original observation: [view post](<"+String(visual.url).replace(/[<>]/g,"")+">)","",
+        "Image links (not downloaded automatically):","",
+        ...media.map(link=>"- [Open image](<"+link.replace(/[<>]/g,"")+">)"),
+        "","No source project URL was observed. Do not infer one.",""
+      ].join("\n");
+      const resultType=putIfAbsent(join(folder,"Visuals",id+".md"),text);
+      if(resultType==="created")result.created++;
+      else if(resultType==="same")result.unchanged++;
+      else result.conflicts++;
     }
     const stats=store.stats();
     const lastRun=stats.lastRun as {id?:string;started_at?:string;status?:string}|null;

@@ -19,7 +19,7 @@ export function evaluate(url: string, title: string, context: string, metadata: 
     if (count > matches) { matches = count; category = c.name; }
   }
   let score = 0;
-  if (matches) {score += Math.min(35, 15 + matches * 7); reasons.push("Topic matches " + category);}
+  if (matches) {score += Math.min(42, 17 + matches * 8); reasons.push("Topic matches " + category);}
   else reasons.push("No strong profile relevance signal");
   if (metadata.title && metadata.title.length >= 8) {score += 12; reasons.push("Public title detected");}
   if (metadata.description && metadata.description.length >= 50) {score += 18; reasons.push("Substantive description available");}

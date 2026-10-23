@@ -1,26 +1,28 @@
-# Architecture and security
+# Obsidian-first architecture
 
-CLI / optional local HTTP service -> connector -> SQLite -> scoring -> structured Markdown -> Obsidian.
+Obsidian desktop UI -> bundled LocalBridge Node child process -> authenticated loopback API -> authorized connector -> posts -> SQLite -> normalized linked resources -> evidence-based scoring -> Markdown and native Bases -> human review -> optional References.md insertion.
 
-- packages/connectors: local JSON fixture and optional public HTML metadata discovery.
-- packages/core: input normalization, source extraction, orchestration, vault export.
-- packages/storage: indexed SQLite with posts, sightings, sources, join table, reviews, runs, checkpoints and durable pause state.
-- packages/quality: configuration-driven, evidence-gated heuristic ranking.
-- apps/collector: CLI and explicitly enabled localhost service with bearer authentication.
-- apps/obsidian-plugin: native desktop plugin; reads API, requests sync and records human reviews.
+The collector can run independently with the CLI when Obsidian is closed. The Obsidian UI is the normal application entrypoint; it automatically launches the included collector.cjs and generates a temporary bearer token.
 
-The collector works independently of Obsidian. No passwords or tokens are stored in Markdown.
-The plugin asks for the local service token each session and never persists it.
-The HTTP service listens only on 127.0.0.1, requires a 24+ character bearer token for every route,
-rejects Origin-bearing cross-site requests and caps request sizes.
-The token never appears in logs. Remote enrichment is opt-in, enforces protocol allowlisting,
-DNS/public-address checks, pins the destination IP for the request, caps redirects, response length,
-and timeouts. It does not execute remote code or download media.
+## Persistence and relationships
 
-Note export never modifies References.md. Candidate/approved files are create-only. A preexisting
-file with different bytes is flagged as a conflict, not overwritten. Users approve explicitly;
-even high_quality sources are not automatically approved. The manual recommendation queue ranks posts and authors without interacting with X. The existing Obsidian MCP can read
-these notes without a second MCP service.
+SQLite records posts (connector ID, original permalink, author, text, observed times), sources (unique normalized URL and quality fields), many-to-many post/source relations, every observed run, checkpoints, errors, reviews and stored pause state. The plugin uses a database under ~/.x-feed-scraper/<vault-hash>/library.db to avoid vault sync conflicts. The standalone CLI database path is separately configurable.
 
-Heuristic quality scores do not establish aesthetic quality or verified site usefulness.
-Visual-only posts remain in SQLite and need separate manual curation.
+The vault stores only important candidate and approved notes with typed YAML, a Sources.base file and short run reports. References.md remains the existing primary curated library and is never overwritten by the pipeline.
+
+## Connectors and limitations
+
+- Fixture: synthetic tests with no X access.
+- Manual: observations explicitly pasted/imported by the user, including any user-provided X post URLs.
+- RSS/Atom: user-authorized public feeds, configurable interval and incremental deduplication.
+- Personalized X For You: no authorized, verified connector exists in this release.
+
+The core keeps connector-specific logic separate from domain models, scoring and persistence. The initial profile is design; profiles may use other categories.
+
+## Quality
+
+Rules use relevance, public page evidence, explicit licensing and access facts. Score is 0–100; confidence is an independent evidence metric. A high score does not establish aesthetic quality and never auto-approves candidates. Reviews record user decisions, and a bounded category-specific preference adjustment helps prioritize future discoveries.
+
+## File safety
+
+The export creates Markdown notes without replacing pre-existing files, flags conflicts, and removes only byte-identical generated candidates after a separate approved note has been successfully written. References.md writes require explicit action, a timestamped backup and re-validation in Obsidian's atomic Vault.process callback.

@@ -10,5 +10,7 @@ dist/
 .env.*
 !.env.example
 apps/obsidian-plugin/main.js
+apps/obsidian-plugin/collector.cjs
+apps/obsidian-plugin/design.json
 coverage/
 *.log
