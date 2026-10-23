@@ -2,19 +2,19 @@
 
 A local-first desktop Obsidian plugin that discovers, deduplicates, scores, reviews and organizes useful resources. It runs a bundled Node.js collector locally, stores observations in SQLite, and generates structured Markdown plus an Obsidian Base.
 
-**Version: 0.2.0.** The packaged collector passes CI integration tests. The real personalized X **For You** feed is **NOT CONNECTED**, because no authorized method for it has been verified. Public RSS/Atom feeds and user-supplied observations are distinct connectors; they are never represented as your X For You recommendations.
+**Version: 0.3.0 (preview).** The packaged collector passes CI integration tests. The real personalized X **For You** feed is **NOT CONNECTED**, because no authorized method for it has been verified. Public RSS/Atom feeds and user-supplied observations are distinct connectors; they are never represented as your X For You recommendations.
 
 ## Install in Obsidian Desktop
 
 1. Install Node.js 22.16+ and Obsidian Desktop 1.8+.
-2. Download the ZIP from the successful **x-feed-scraper-obsidian** GitHub Actions artifact: https://github.com/ibbuilds/obsidian-x-feed-scraper/actions/workflows/ci.yml
+2. Download the ZIP from the successful **x-feed-scraper-obsidian** GitHub Actions artifact: https://github.com/ibbuilds/obsidian-x-feed-scraper/releases/tag/v0.3.0-beta.1
 3. Extract the ZIP into your vault plugin folder (usually <vault>/.obsidian/plugins/x-feed-scraper/). It includes the five assets `main.js`, `manifest.json`, `collector.cjs`, `design.json` and `styles.css`. The standard three Obsidian files (`main.js`, `manifest.json`, `styles.css`) are now independently sufficient: `main.js` contains a SHA-256-verified embedded collector and design profile, materialized into the per-vault local data directory on first launch.
 4. In Obsidian Settings > Community plugins, reload and enable X Feed Scraper. Open the ribbon panel. Press **Diagnostics** to verify Node.js, SQLite integrity and detection of `References.md`.
 5. The panel prepares its verified, embedded local engine and auto-starts it with a random temporary token and an OS-selected loopback port. There is no manual daemon or token setup. If Node is not on your GUI application's PATH, specify the absolute Node.js executable in plugin settings.
 6. Configure an authorized public RSS or Atom feed URL if you want periodic collection; the default interval is 60 minutes. Leave it blank for manual observations. Press Restart collector after settings changes.
 7. Use Import observations for post URLs and the corresponding text containing external resource URLs, then review candidates and opt in to metadata enrichment. Approved sources can be added to References.md only via explicit confirmation and timestamped backup.
 
-**No real user X feed has been accessed, and the actual desktop Obsidian installation still needs user-device smoke testing.** Do not paste X cookies, passwords, sessions or secrets into this project.
+**No real user X feed has been accessed, and the Obsidian Desktop app and its manual import/review/References workflow are now tested in CI; the user's personal installation still needs user-device smoke testing.** Do not paste X cookies, passwords, sessions or secrets into this project.
 
 ## Current capabilities
 

@@ -14,7 +14,7 @@ test("Obsidian distribution ships complete installable desktop plugin",()=>{
   const manifest=JSON.parse(Buffer.from(archiveEntries["manifest.json"]).toString("utf8")) as {id:string;version:string;isDesktopOnly:boolean};
   assert.equal(manifest.id,"x-feed-scraper");
   assert.equal(manifest.isDesktopOnly,true);
-  assert.equal(manifest.version,"0.2.0");
+  assert.equal(manifest.version,"0.3.0");
   assert.ok(statSync(archive).size>10000);
   // Community plugin installers copy only these three standard assets.
   // The compiled main.js must therefore embed the collector and default profile.
