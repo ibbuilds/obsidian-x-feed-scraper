@@ -82,6 +82,7 @@ export function exportToVault(dbPath:string,vaultPath:string): {created:number;u
   const folder=join(root,"X Feed Scraper");
   mkdirSync(join(folder,"Candidates"),{recursive:true});
   mkdirSync(join(folder,"Approved"),{recursive:true});
+  mkdirSync(join(folder,"Reports"),{recursive:true});
   const store=new Store(dbPath);
   const result={created:0,unchanged:0,conflicts:0,skipped:0};
   try {
@@ -99,6 +100,30 @@ export function exportToVault(dbPath:string,vaultPath:string): {created:number;u
       else if (value==="same") result.unchanged++;
       else result.conflicts++;
       // Never delete an old candidate note. Manual edits and previous review state survive.
+    }
+    const stats=store.stats();
+    const lastRun=stats.lastRun as {id?:string;started_at?:string;status?:string}|null;
+    if (lastRun?.id && /^[\w-]+$/.test(lastRun.id)) {
+      const report=[
+        "---","type: x-feed-report",
+        "run_id: "+yaml(lastRun.id),
+        "started: "+yaml(lastRun.started_at||""),
+        "status: "+yaml(lastRun.status||""),
+        "---","","# Discovery report","",
+        "- Posts in database: "+Number(stats.posts),
+        "- Unique sources: "+Number(stats.sources),
+        "- Post-source associations: "+Number(stats.links),
+        "- High-quality candidates: "+Number(stats.high_quality),
+        "- Pending review: "+Number(stats.needs_review),
+        "- Approved: "+Number(stats.approved),
+        "- Recorded errors: "+Number(stats.errors),
+        "",
+        "Scores are heuristic; the personalized X feed has not been accessed.",""
+      ].join("\n");
+      const reportState=putIfAbsent(join(folder,"Reports",lastRun.id+".md"),report);
+      if (reportState==="created") result.created++;
+      else if (reportState==="same") result.unchanged++;
+      else result.conflicts++;
     }
     const state=putIfAbsent(join(folder,"Sources.base"),BASE);
     if (state==="created") result.created++;
