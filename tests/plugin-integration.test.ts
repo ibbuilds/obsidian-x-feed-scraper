@@ -59,8 +59,7 @@ test("shipped Obsidian collector boots, authenticates and exports without changi
     const after=await (await fetch(url+"/status",{headers:auth})).json() as {posts:number};
     assert.equal(after.posts,5);
   }finally{
-    bridge.stop();
-    await new Promise(resolve=>setTimeout(resolve,200));
+    await bridge.stop();
     rmSync(root,{recursive:true,force:true});
   }
 });
