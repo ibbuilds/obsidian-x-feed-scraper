@@ -16,6 +16,10 @@
     "package": "npm run build && node apps/obsidian-plugin/package.mjs"
   },
   "dependencies": {"fast-xml-parser": "^5.2.5"},
-  "devDependencies": {"@types/node": "^22.15.0", "typescript": "^5.8.3"},
+  "devDependencies": {
+    "@types/node": "^22.15.0",
+    "typescript": "^5.8.3",
+    "fflate": "^0.8.2"
+  },
   "license": "MIT"
 }
