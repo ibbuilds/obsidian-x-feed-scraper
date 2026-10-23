@@ -1,36 +1,34 @@
 import {browser,expect} from "@wdio/globals";
 import {before,describe,it} from "mocha";
-import {copyFileSync,existsSync} from "node:fs";
-import {dirname,join,resolve} from "node:path";
-import {fileURLToPath} from "node:url";
+import {existsSync} from "node:fs";
+import {join} from "node:path";
 
 describe("X Feed Scraper in actual Obsidian Desktop",function(){
   before(async()=>{
-    // WDIO's Obsidian launcher copies only the three standard plugin files,
-    // while our real distribution ZIP contains collector.cjs and design.json too.
-    // Stage those exact shipped assets into the temporary sandbox (never the user's vault).
-    const basePath=await browser.executeObsidian(({app})=>{
+    // The actual Obsidian launcher installs only main.js, manifest.json and styles.css.
+    // No manually staged collector.cjs or design.json is allowed: main.js must be self-contained.
+    const path=await browser.executeObsidian(({app})=>{
       return (app.vault.adapter as {getBasePath:()=>string}).getBasePath();
     });
-    const source=resolve(dirname(fileURLToPath(import.meta.url)),"../../../apps/obsidian-plugin");
-    const dest=join(basePath,".obsidian","plugins","x-feed-scraper");
-    for(const asset of ["collector.cjs","design.json"]){
-      if(!existsSync(join(source,asset)))throw new Error("Not bundled: "+asset);
-      copyFileSync(join(source,asset),join(dest,asset));
+    const pluginDir=join(path,".obsidian","plugins","x-feed-scraper");
+    for(const file of ["collector.cjs","design.json"]){
+      if(existsSync(join(pluginDir,file))){
+        throw new Error("Test incorrectly staged "+file+" in Obsidian's three-file installer");
+      }
     }
     const started=await browser.executeObsidian(async({app})=>{
       const instance=(app as unknown as {plugins:{plugins:Record<string,{
-        restart:()=>Promise<void>;bridge:{running:boolean;lastError:string}
+        start:()=>Promise<void>;bridge:{running:boolean;lastError:string}
       }>}}).plugins.plugins["x-feed-scraper"];
       if(!instance)return {running:false,error:"Plugin instance not loaded"};
       try{
-        await instance.restart();
+        await instance.start();
         return {running:instance.bridge.running,error:instance.bridge.lastError};
       }catch(error){
         return {running:false,error:String(error)};
       }
     });
-    if(!started.running)throw new Error("Actual Obsidian collector could not start: "+started.error);
+    if(!started.running)throw new Error("Three-file Obsidian install could not boot embedded collector: "+started.error);
   });
   it("loads the real plugin and opens its native sidebar without touching References",async()=>{
     await browser.executeObsidianCommand("x-feed-scraper:open-candidates");
