@@ -119,6 +119,18 @@ export class Store {
     const q = search ? "%" + search.slice(0,100) + "%" : null;
     return (this.db.prepare(query).all(status || null,status || null,q,q,q,q,safeLimit) as Row[]).map(asSource);
   }
+  pendingForEnrichment(limit=20):Source[] {
+    const safeLimit=Math.max(1,Math.min(100,Math.floor(limit)));
+    const rows=this.db.prepare(
+      "SELECT s.*, "+
+      "(SELECT p.url FROM post_sources ps JOIN posts p ON p.connector=ps.connector AND p.id=ps.post_id WHERE ps.source_id=s.id LIMIT 1) post_url,"+
+      "(SELECT p.author FROM post_sources ps JOIN posts p ON p.connector=ps.connector AND p.id=ps.post_id WHERE ps.source_id=s.id LIMIT 1) author "+
+      "FROM sources s WHERE s.status NOT IN ('approved','rejected') "+
+      "AND s.category != 'existing_reference' AND (s.description IS NULL OR s.description='') "+
+      "ORDER BY s.score DESC LIMIT ?"
+    ).all(safeLimit) as Row[];
+    return rows.map(asSource);
+  }
   listSourcesPage(offset=0,limit=200):Source[] {
     const safeOffset=Math.max(0,Math.floor(offset));
     const safeLimit=Math.max(1,Math.min(500,Math.floor(limit)));
