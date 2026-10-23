@@ -420,6 +420,10 @@ export default class ScraperPlugin extends Plugin {
   }
   async addApprovedToReferences(source:Source):Promise<void>{
     if(source.status!=="approved")throw new Error("Only manually approved sources can enter References.md");
+    const fresh=await this.call("/source?id="+encodeURIComponent(String(source.id))) as Source;
+    if(fresh.status!=="approved"||fresh.url!==source.url){
+      throw new Error("Source approval changed since this view was loaded. Refresh before modifying References.md");
+    }
     const file=this.app.vault.getAbstractFileByPath("References.md");
     if(!(file instanceof TFile))throw new Error("References.md not found at vault root");
     const original=await this.app.vault.read(file);
