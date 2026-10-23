@@ -7,6 +7,7 @@ import {homedir} from "node:os";
 import {libraryContains,appendApprovedReference} from "./library.ts";
 import {join} from "node:path";
 import {LocalBridge} from "./bridge.ts";
+import {prepareBundledAssets} from "./embedded.ts";
 
 const VIEW="x-feed-scraper-view";
 interface SettingsData {
@@ -368,7 +369,7 @@ export default class ScraperPlugin extends Plugin {
     return {dir,vault};
   }
   async start():Promise<void>{
-    const {dir,vault}=this.paths();
+    const {vault}=this.paths();
     if(this.settings.feedUrl&&this.settings.fixturePath)throw new Error("Choose either RSS or fixture input");
     if(this.settings.feedUrl){
       const url=new URL(this.settings.feedUrl);
@@ -377,12 +378,14 @@ export default class ScraperPlugin extends Plugin {
         throw new Error("Use an authorized public RSS URL without credentials");
       }
     }
+    const localData=join(homedir(),".x-feed-scraper",
+      createHash("sha256").update(vault).digest("hex").slice(0,20));
+    const embedded=prepareBundledAssets(localData);
     await this.bridge.start({
       executable:this.settings.nodeExecutable,
-      collectorPath:join(dir,"collector.cjs"),
-      databasePath:join(homedir(),".x-feed-scraper",
-        createHash("sha256").update(vault).digest("hex").slice(0,20),"library.db"),
-      profilePath:this.settings.profilePath||join(dir,"design.json"),
+      collectorPath:embedded.collectorPath,
+      databasePath:join(localData,"library.db"),
+      profilePath:this.settings.profilePath||embedded.profilePath,
       vaultPath:vault,
       feedUrl:this.settings.feedUrl||undefined,
       fixturePath:this.settings.fixturePath||undefined,
