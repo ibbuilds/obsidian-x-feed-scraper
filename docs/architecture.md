@@ -2,7 +2,7 @@
 
 Obsidian desktop UI -> bundled LocalBridge Node child process -> authenticated loopback API -> authorized connector -> posts -> SQLite -> normalized linked resources -> evidence-based scoring -> Markdown and native Bases -> human review -> optional References.md insertion.
 
-The collector can run independently with the CLI when Obsidian is closed. The Obsidian UI is the normal application entrypoint; it automatically launches the included collector.cjs and generates a temporary bearer token.
+The collector can run independently with the CLI when Obsidian is closed. The Obsidian UI is the normal application entrypoint. The standard `main.js` embeds the Node collector and default profile, verifies SHA-256 integrity, materializes versioned local files outside the vault, then launches the collector with a temporary bearer token.
 
 ## Persistence and relationships
 
