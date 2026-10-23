@@ -1,6 +1,6 @@
 import {test} from "node:test";
 import assert from "node:assert/strict";
-import {mkdtempSync,mkdirSync,readFileSync,writeFileSync,readdirSync,existsSync,rmSync} from "node:fs";
+import {mkdtempSync,mkdirSync,readFileSync,writeFileSync,readdirSync,existsSync,rmSync,symlinkSync,statSync} from "node:fs";
 import {tmpdir} from "node:os";
 import {join} from "node:path";
 import {readFixture} from "../packages/connectors/fixtures.ts";
@@ -200,5 +200,22 @@ test("manual access classification and audit survive SQLite restarts",()=>{
    assert.equal(after.getSource(resource.id)?.access,"freemium");
    assert.throws(()=>after.review(resource.id,"approved","Bad field","pirated" as never),/Invalid access/);
    after.close();
+ }finally{rmSync(root,{recursive:true,force:true});}
+});
+
+
+test("vault symlink directory cannot redirect generated notes outside vault",()=>{
+ const root=mkdtempSync(join(tmpdir(),"xfs-symlink-"));
+ const vault=join(root,"vault"),outside=join(root,"outside"),db=join(root,"store.db");
+ mkdirSync(vault);mkdirSync(outside);
+ try{
+   try{symlinkSync(outside,join(vault,"X Feed Scraper"),process.platform==="win32"?"junction":"dir");}
+   catch(error){
+     if(["EPERM","EACCES"].includes((error as NodeJS.ErrnoException).code||""))return;
+     throw error;
+   }
+   ingest(db,fixture,profile);
+   assert.throws(()=>exportToVault(db,vault),/symbolic link|symlink/i);
+   assert.equal(readdirSync(outside).length,0);
  }finally{rmSync(root,{recursive:true,force:true});}
 });
