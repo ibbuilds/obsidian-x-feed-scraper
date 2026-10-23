@@ -74,11 +74,23 @@ export function startServer(config:ServerOptions):ReturnType<typeof createServer
     if(busy)throw new Error("Synchronization already running");
     if(!config.fixture&&!config.feed)throw new Error("No input configured. Set an RSS URL or import observations manually.");
     busy=true;
+    const connector=config.feed?"rss:"+createHash("sha256").update(config.feed).digest("hex").slice(0,16):"fixture";
+    let inputAcquired=false;
     try{
       const observations=config.feed?await fetchRSS(config.feed):readFixture(config.fixture!);
-      const connector=config.feed?"rss:"+createHash("sha256").update(config.feed).digest("hex").slice(0,16):"fixture";
+      inputAcquired=true;
       const result=ingest(config.db,observations,config.profile,connector,references());
       return {result,export:config.vault?exportToVault(config.db,config.vault):null};
+    }catch(error){
+      if(!inputAcquired){
+        const store=new Store(config.db);
+        try{
+          const id=store.begin(connector);
+          store.error(id,"connector","Connector failed before producing observations");
+          store.finish(id,"failed",0,0,0,"Connector failed before producing observations");
+        }finally{store.close();}
+      }
+      throw error;
     }finally{busy=false;}
   };
   const server=createServer(async(req,res)=>{
@@ -168,14 +180,7 @@ export function startServer(config:ServerOptions):ReturnType<typeof createServer
   if(config.intervalMinutes>0){
     const timer=setInterval(()=>{
       if(paused||busy||(!config.feed&&!config.fixture))return;
-      void collect().catch(e=>{
-        const store=new Store(config.db);
-        try{
-          const id=store.begin(source());
-          store.error(id,"scheduler",e instanceof Error?e.message:"Sync failure");
-          store.finish(id,"failed",0,0,0,"Input failed");
-        }finally{store.close();}
-      });
+      void collect().catch(()=>{/* Failure already recorded by the connector or pipeline. */});
     },Math.max(15,config.intervalMinutes)*60_000);
     timer.unref();server.on("close",()=>clearInterval(timer));
   }
