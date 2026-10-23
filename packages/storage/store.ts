@@ -119,6 +119,17 @@ export class Store {
     const q = search ? "%" + search.slice(0,100) + "%" : null;
     return (this.db.prepare(query).all(status || null,status || null,q,q,q,q,safeLimit) as Row[]).map(asSource);
   }
+  listSourcesPage(offset=0,limit=200):Source[] {
+    const safeOffset=Math.max(0,Math.floor(offset));
+    const safeLimit=Math.max(1,Math.min(500,Math.floor(limit)));
+    const rows=this.db.prepare(
+      "SELECT s.*,"+
+      "(SELECT p.url FROM post_sources ps JOIN posts p ON p.connector=ps.connector AND p.id=ps.post_id WHERE ps.source_id=s.id LIMIT 1) post_url,"+
+      "(SELECT p.author FROM post_sources ps JOIN posts p ON p.connector=ps.connector AND p.id=ps.post_id WHERE ps.source_id=s.id LIMIT 1) author "+
+      "FROM sources s ORDER BY s.id ASC LIMIT ? OFFSET ?"
+    ).all(safeLimit,safeOffset) as Row[];
+    return rows.map(asSource);
+  }
   listPosts(limit=100): Row[] {return this.db.prepare("SELECT id,connector,url,author,username,text,first_seen,last_seen,processing_status FROM posts ORDER BY last_seen DESC LIMIT ?").all(Math.min(500,Math.max(1,limit))) as Row[];}
   review(id: number, decision: "approved"|"rejected"|"needs_review"|"excellent", reason: string): Source {
     if (!reason.trim()) throw new Error("Review reason is required");
