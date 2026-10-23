@@ -92,9 +92,17 @@ export class LocalBridge {
       });
     });
   }
-  stop():void{
+  async stop():Promise<void>{
     const child=this.child;
     this.child=undefined;this.tokenValue="";this.portValue=0;
-    if(child&&!child.killed)child.kill("SIGTERM");
+    if(child&&child.exitCode===null){
+      const ended=new Promise<void>(resolve=>{
+        child.once("exit",()=>resolve());
+        const timeout=setTimeout(resolve,2000);
+        timeout.unref();
+      });
+      child.kill("SIGTERM");
+      await ended;
+    }
   }
 }
