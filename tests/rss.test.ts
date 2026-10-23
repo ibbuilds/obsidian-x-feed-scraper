@@ -28,3 +28,8 @@ test("Atom feeds with relative links are supported",()=>{
 test("invalid documents are rejected",()=>{
  assert.throws(()=>parseFeed("<foo><bar/></foo>","https://example.org/rss"));
 });
+
+test("XML entity declarations are rejected to avoid expansion attacks",()=>{
+  const xml='<!DOCTYPE feed [<!ENTITY large "DANGER">]><rss><channel><title>X</title></channel></rss>';
+  assert.throws(()=>parseFeed(xml,"https://example.org/rss"),/DTD/);
+});
