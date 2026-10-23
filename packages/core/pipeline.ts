@@ -1,4 +1,4 @@
-import {openSync,closeSync,readFileSync,unlinkSync,statSync} from "node:fs";
+import {openSync,closeSync,readFileSync,unlinkSync,statSync,mkdirSync} from "node:fs";
 import {dirname,join} from "node:path";
 import {normalizeUrl,extractUrls} from "./url.ts";
 import {evaluate} from "../quality/evaluate.ts";
@@ -25,6 +25,7 @@ export function deriveTitle(url: string):string {
 }
 export interface Result {runId:string;posts:number;newSources:number;duplicates:number;errors:number;visualOnly:number}
 export function ingest(dbPath: string, posts: Post[], profile: Profile, connector = "fixture", references: ReadonlySet<string> = new Set()): Result {
+  mkdirSync(dirname(dbPath), {recursive:true});
   const lockFile = dbPath + ".lock";
   let lock: number;
   try {lock = openSync(lockFile,"wx",0o600);}
