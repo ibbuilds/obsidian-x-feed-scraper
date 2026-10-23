@@ -26,7 +26,7 @@ jobs:
           TAG: v0.2.0-beta.1
         run: |
           if gh release view "$TAG" >/dev/null 2>&1; then
-            gh release upload "$TAG" dist/obsidian-x-feed-scraper.zip --clobber
+            echo "Preview release already exists; preserving its published asset."
           else
             gh release create "$TAG" dist/obsidian-x-feed-scraper.zip \
               --title "X Feed Scraper for Obsidian v0.2.0 Preview" \
