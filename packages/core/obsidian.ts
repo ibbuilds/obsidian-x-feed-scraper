@@ -30,8 +30,8 @@ export function renderSource(source: Source): string {
     "post_url: " + yaml(source.postUrl || ""),
     "---", "",
     "# " + label, "",
-    "Source: [" + label + "](" + url + ")",
-    source.postUrl ? "Discovered in: [original post](" + source.postUrl.replace(/[<>]/g,"") + ")" : "",
+    "Source: [" + label + "](<" + url + ">)",
+    source.postUrl ? "Discovered in: [original post](<" + source.postUrl.replace(/[<>]/g,"") + ">)" : "",
     "",
     "## Evaluation", "",
     ...source.reasons.map(r=>"- " + oneLine(r,300)),
@@ -51,8 +51,19 @@ function putIfAbsent(path:string,content:string):"created"|"same"|"conflict"{
       linkSync(temp,path);
       return "created";
     }catch(e){
-      if((e as NodeJS.ErrnoException).code==="EEXIST"){
-        return readFileSync(path,"utf8")===content?"same":"conflict";
+      const code=(e as NodeJS.ErrnoException).code;
+      if(code==="EEXIST")return readFileSync(path,"utf8")===content?"same":"conflict";
+      if(["EPERM","ENOTSUP","EOPNOTSUPP"].includes(code||"")){
+        // Some filesystems do not support hard links; exclusive write still never clobbers.
+        try{
+          writeFileSync(path,content,{flag:"wx",mode:0o600});
+          return "created";
+        }catch(fallback){
+          if((fallback as NodeJS.ErrnoException).code==="EEXIST"){
+            return readFileSync(path,"utf8")===content?"same":"conflict";
+          }
+          throw fallback;
+        }
       }
       throw e;
     }
