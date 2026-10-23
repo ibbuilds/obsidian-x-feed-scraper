@@ -1,0 +1,6 @@
+[
+  {"id":"fixture-1","url":"https://x.com/mock/status/1","author":"Studio A","username":"studioa","text":"Open source React component experiments for frontend teams https://github.com/pmndrs/drei?utm_source=x"},
+  {"id":"fixture-2","url":"https://x.com/mock/status/2","author":"Designer B","username":"designerb","text":"Motion design and interaction references https://motion.dev/docs and a separate typography guide https://fonts.google.com/knowledge"},
+  {"id":"fixture-3","url":"https://x.com/mock/status/3","author":"Artist C","username":"artistc","text":"Beautiful interface shot, no resource URL","images":["https://example.org/visual.png"]},
+  {"id":"fixture-4","url":"https://x.com/mock/status/4","author":"Designer D","username":"designerd","text":"Another mention of https://motion.dev/docs?utm_campaign=demo"}
+]

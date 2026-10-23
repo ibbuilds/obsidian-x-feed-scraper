@@ -1,0 +1,22 @@
+{
+  "name": "x-feed-scraper",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Local-first source discovery and curation pipeline",
+  "engines": {"node": ">=22.16.0"},
+  "workspaces": ["apps/obsidian-plugin"],
+  "scripts": {
+    "sync": "node --experimental-strip-types apps/collector/cli.ts sync",
+    "cli": "node --experimental-strip-types apps/collector/cli.ts",
+    "serve": "node --experimental-strip-types apps/collector/cli.ts serve",
+    "test": "node --experimental-strip-types --test tests/*.test.ts",
+    "check": "tsc --noEmit",
+    "build": "npm run build -w @x-feed/obsidian-plugin"
+  },
+  "devDependencies": {
+    "@types/node": "^22.15.0",
+    "typescript": "^5.8.3"
+  },
+  "license": "MIT"
+}
