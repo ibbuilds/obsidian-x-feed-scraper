@@ -33,6 +33,14 @@ test("shipped Obsidian collector boots, authenticates and exports without changi
     const status=await fetch(url+"/status",{headers:auth});
     assert.equal(status.status,200);
     assert.equal((await status.json() as {connectedSource:string}).connectedSource,"fixture");
+    const diagnostics=await fetch(url+"/diagnostics",{headers:auth});
+    assert.equal(diagnostics.status,200);
+    const doc=await diagnostics.json() as {
+      sqliteIntegrity:string;referencesPresent:boolean;personalizedXFeedAvailable:boolean
+    };
+    assert.equal(doc.sqliteIntegrity,"ok");
+    assert.equal(doc.referencesPresent,true);
+    assert.equal(doc.personalizedXFeedAvailable,false);
     const sync=await fetch(url+"/sync",{method:"POST",headers:auth});
     assert.equal(sync.status,200);
     const syncBody=await sync.json() as {result:{posts:number;newSources:number}};
