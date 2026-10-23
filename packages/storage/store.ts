@@ -72,6 +72,25 @@ export class Store {
     this.db.prepare("INSERT OR IGNORE INTO post_sources(connector,post_id,source_id) VALUES(?,?,?)").run(connector,postId,id);
     return {id, fresh:result.changes > 0};
   }
+  repointSource(id:number,canonicalUrl:string):number {
+    this.db.exec("BEGIN IMMEDIATE");
+    try {
+      const existing=this.db.prepare("SELECT id FROM sources WHERE normalized_url=?").get(canonicalUrl) as Row|undefined;
+      if (!existing) {
+        this.db.prepare("UPDATE sources SET normalized_url=?,updated_at=? WHERE id=?").run(canonicalUrl,new Date().toISOString(),id);
+        this.db.exec("COMMIT");return id;
+      }
+      const target=Number(existing.id);
+      if (target!==id) {
+        this.db.prepare("INSERT OR IGNORE INTO post_sources(connector,post_id,source_id) SELECT connector,post_id,? FROM post_sources WHERE source_id=?").run(target,id);
+        this.db.prepare("DELETE FROM post_sources WHERE source_id=?").run(id);
+        this.db.prepare("UPDATE reviews SET source_id=? WHERE source_id=?").run(target,id);
+        this.db.prepare("DELETE FROM sources WHERE id=?").run(id);
+      }
+      this.db.exec("COMMIT");
+      return target;
+    } catch(e) {this.db.exec("ROLLBACK");throw e;}
+  }
   updateEvaluation(id: number, metadata: Metadata, evaluation: Evaluation): void {
     const old = this.db.prepare("SELECT status FROM sources WHERE id=?").get(id) as Row | undefined;
     if (!old) throw new Error("Source not found");
