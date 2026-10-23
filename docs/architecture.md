@@ -4,7 +4,7 @@ CLI / optional local HTTP service -> connector -> SQLite -> scoring -> structure
 
 - packages/connectors: local JSON fixture and optional public HTML metadata discovery.
 - packages/core: input normalization, source extraction, orchestration, vault export.
-- packages/storage: indexed SQLite with posts, sightings, sources, join table, reviews, runs and checkpoints.
+- packages/storage: indexed SQLite with posts, sightings, sources, join table, reviews, runs, checkpoints and durable pause state.
 - packages/quality: configuration-driven, evidence-gated heuristic ranking.
 - apps/collector: CLI and explicitly enabled localhost service with bearer authentication.
 - apps/obsidian-plugin: native desktop plugin; reads API, requests sync and records human reviews.
@@ -19,7 +19,7 @@ and timeouts. It does not execute remote code or download media.
 
 Note export never modifies References.md. Candidate/approved files are create-only. A preexisting
 file with different bytes is flagged as a conflict, not overwritten. Users approve explicitly;
-even high_quality sources are not automatically approved. The existing Obsidian MCP can read
+even high_quality sources are not automatically approved. The manual recommendation queue ranks posts and authors without interacting with X. The existing Obsidian MCP can read
 these notes without a second MCP service.
 
 Heuristic quality scores do not establish aesthetic quality or verified site usefulness.
