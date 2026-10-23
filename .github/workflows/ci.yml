@@ -1,7 +1,7 @@
 name: CI
 on:
   push:
-    branches: [main, feat/obsidian-first-production]
+    branches: [main, feat/obsidian-first-production, feat/real-obsidian-desktop-e2e]
   pull_request:
   workflow_dispatch:
 permissions:
@@ -37,3 +37,31 @@ jobs:
           path: dist/obsidian-x-feed-scraper.zip
           if-no-files-found: error
           retention-days: 30
+
+  desktop-obsidian-e2e:
+    name: Desktop Obsidian integration (actual app)
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - run: npm ci --no-audit --no-fund
+      - run: npm run package
+      - name: Install isolated desktop test runner
+        run: npm install --prefix tests/desktop --no-audit --no-fund
+      - name: Prepare Linux virtual desktop
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y xvfb herbstluftwm
+          Xvfb :99 -screen 0 1280x1024x24 -nolisten tcp &
+          sleep 2
+          DISPLAY=:99 herbstluftwm &
+          sleep 2
+      - name: Exercise X Feed Scraper in actual Obsidian
+        env:
+          DISPLAY: ':99'
+          OBSIDIAN_VERSIONS: latest/latest
+          WDIO_MAX_INSTANCES: '1'
+        run: ./tests/desktop/node_modules/.bin/wdio run ./tests/desktop/wdio.conf.mts
