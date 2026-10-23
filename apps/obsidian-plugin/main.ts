@@ -3,8 +3,9 @@ import {
   WorkspaceLeaf,requestUrl
 } from "obsidian";
 import {createHash,randomBytes} from "node:crypto";
+import {homedir} from "node:os";
+import {libraryContains,appendApprovedReference} from "./library.ts";
 import {join} from "node:path";
-import {normalizeUrl} from "../../packages/core/url.ts";
 import {LocalBridge} from "./bridge.ts";
 
 const VIEW="x-feed-scraper-view";
@@ -48,20 +49,6 @@ function external(parent:HTMLElement,title:string,target:string):void{
     const a=parent.createEl("a",{text:title,href:url.toString()});
     a.setAttr("target","_blank");a.setAttr("rel","noopener noreferrer");
   }catch{}
-}
-function libraryContains(markdown:string,target:string):boolean{
-  const expected=normalizeUrl(target);
-  for(const match of markdown.matchAll(/https?:\/\/[^\s<>"')]+/gi)){
-    try{
-      if(normalizeUrl(match[0].replace(/[.,;]+$/,""))===expected)return true;
-    }catch{}
-  }
-  return false;
-}
-function entry(source:Source):string{
-  const title=(source.title||source.url).replace(/[\r\n\[\]<>]/g," ").trim().slice(0,180);
-  const category=source.category.replace(/[^\w-]/g," ").slice(0,60);
-  return "- ["+title+"](<"+normalizeUrl(source.url)+">) — "+category+" (revisado manualmente)\n";
 }
 class ConfirmAction extends Modal {
   constructor(plugin:ScraperPlugin,headline:string,message:string,confirm:string,action:()=>Promise<void>){
@@ -317,7 +304,7 @@ class ScraperSettings extends PluginSettingTab {
         try{await this.plugin.restart();new Notice("Local collector restarted");}
         catch(e){new Notice(asError(e));}
       }));
-    root.createEl("p",{text:"Data resides in this vault's plugin folder as SQLite. "+
+    root.createEl("p",{text:"SQLite is stored outside the synced vault under ~/.x-feed-scraper. "+
       "Local API bearer tokens are randomized in memory every start. "+
       "References.md is only modified after confirmation and backup."});
   }
@@ -363,7 +350,8 @@ export default class ScraperPlugin extends Plugin {
     await this.bridge.start({
       executable:this.settings.nodeExecutable,
       collectorPath:join(dir,"collector.cjs"),
-      databasePath:join(dir,"storage","library.db"),
+      databasePath:join(homedir(),".x-feed-scraper",
+        createHash("sha256").update(vault).digest("hex").slice(0,20),"library.db"),
       profilePath:this.settings.profilePath||join(dir,"design.json"),
       vaultPath:vault,
       feedUrl:this.settings.feedUrl||undefined,
@@ -422,16 +410,12 @@ export default class ScraperPlugin extends Plugin {
     const name="X Feed Scraper/Backups/References-"+new Date().toISOString().replace(/[:.]/g,"-")+
       "-"+randomBytes(4).toString("hex")+".md";
     await this.app.vault.create(name,original);
-    const addition=entry(source);
     await this.app.vault.process(file,current=>{
       if(current!==original)throw new Error("References.md changed during confirmation. Retry.");
-      if(libraryContains(current,source.url))throw new Error("Reference already exists");
-      const marker="## Approved via X Feed Scraper";
-      if(current.includes(marker))return current.trimEnd()+"\n"+addition;
-      return current.trimEnd()+"\n\n"+marker+"\n"+addition;
+      return appendApprovedReference(current,source);
     });
     const updated=await this.app.vault.read(file);
-    if(!updated.includes(addition.trim()))throw new Error("Library write could not be verified");
+    if(!libraryContains(updated,source.url))throw new Error("Library write could not be verified");
     new Notice("Reference appended. Backup created: "+name);
   }
 }
