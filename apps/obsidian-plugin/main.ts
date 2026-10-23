@@ -333,7 +333,7 @@ export default class ScraperPlugin extends Plugin {
     if(this.settings.autoStart)void this.start().then(()=>this.redraw()).catch(()=>this.redraw());
   }
   async onunload():Promise<void>{
-    this.bridge.stop();
+    await this.bridge.stop();
     this.app.workspace.detachLeavesOfType(VIEW);
   }
   async saveSettings():Promise<void>{await this.saveData(this.settings);}
@@ -371,7 +371,7 @@ export default class ScraperPlugin extends Plugin {
     });
   }
   async restart():Promise<void>{
-    this.bridge.stop();
+    await this.bridge.stop();
     await this.start();
     await this.redraw();
   }
