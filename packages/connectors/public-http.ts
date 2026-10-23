@@ -2,7 +2,7 @@ import {lookup} from "node:dns/promises";
 import {request as http} from "node:http";
 import {request as https} from "node:https";
 import {isIP} from "node:net";
-import {isLocalOrUnsafeAddress, normalizeUrl, safeHostname} from "../core/url.ts";
+import {isLocalOrUnsafeAddress, normalizeUrl, safeHostname, isXUrl} from "../core/url.ts";
 
 /** DNS-pinned, redirect-revalidated public text retrieval. No sessions or X scraping. */
 export async function fetchPublicText(input:string, options:{
@@ -12,6 +12,9 @@ export async function fetchPublicText(input:string, options:{
   async function step(inputUrl:string,remaining:number):Promise<{url:string;body:string;contentType:string}> {
     if(remaining<0) throw new Error("Too many redirects");
     const canonical=normalizeUrl(inputUrl);
+    if(isXUrl(canonical)||new URL(canonical).hostname==="t.co"){
+      throw new Error("Automated retrieval from X is not supported");
+    }
     const parsed=new URL(canonical);
     const host=safeHostname(canonical);
     const addresses=isIP(host) ? [{address:host,family:isIP(host)}] : await lookup(host,{all:true});
