@@ -6,6 +6,10 @@ interface Source {
   id:number;url:string;title:string;category:string;access:string;score:number;
   confidence:number;status:string;reasons:string[];postUrl?:string;author?:string;
 }
+type Recommendation = {
+  posts:Array<{post_url:string;author:string;username:string;score:number;sources:string;categories:string}>;
+  authors:Array<{author:string;username:string;posts_seen:number;approved_sources:number;quality_sources:number;categories:string}>;
+};
 type Stat = {posts:number;sources:number;links:number;high_quality:number;needs_review:number;approved:number;
   errors:number;active:boolean;paused:boolean;connectedSource:string;lastRun?:{ended_at?:string;status:string}};
 const DEFAULT:SettingsData={serverUrl:"http://127.0.0.1:47321"};
@@ -46,9 +50,10 @@ class ScraperView extends ItemView {
       return;
     }
     try {
-      const [stats,sources]=await Promise.all([
+      const [stats,sources,recs]=await Promise.all([
         this.plugin.call("/status") as Promise<Stat>,
-        this.plugin.call("/sources") as Promise<Source[]>
+        this.plugin.call("/sources") as Promise<Source[]>,
+        this.plugin.call("/recommendations") as Promise<Recommendation>
       ]);
       root.createEl("p",{text:"Source: "+stats.connectedSource+" | "+(stats.paused?"Paused":stats.active?"Syncing":"Idle")});
       root.createEl("p",{text:"Posts: "+stats.posts+" | Sources: "+stats.sources+" | High quality: "+stats.high_quality+
@@ -78,6 +83,21 @@ class ScraperView extends ItemView {
         this.button(card,"Approve",()=>new ReviewModal(this.plugin,source,"approved",()=>{void this.draw();}).open());
         this.button(card,"Reject",()=>new ReviewModal(this.plugin,source,"rejected",()=>{void this.draw();}).open());
         card.createEl("hr");
+      }
+      root.createEl("h4",{text:"Manual X interactions"});
+      root.createEl("p",{text:"These are suggestions only. No likes or follows are performed by the plugin."});
+      for (const post of recs.posts.slice(0,10)) {
+        const line=root.createDiv();
+        const a=line.createEl("a",{text:post.author+" · "+post.score+"/100",href:post.post_url});
+        a.setAttr("target","_blank");a.setAttr("rel","noopener noreferrer");
+        line.createSpan({text:" · "+post.categories});
+      }
+      for (const author of recs.authors.slice(0,10)) {
+        const line=root.createDiv();
+        const link="https://x.com/"+encodeURIComponent(author.username.replace(/^@/,""));
+        const a=line.createEl("a",{text:"Follow suggestion: "+author.username,href:link});
+        a.setAttr("target","_blank");a.setAttr("rel","noopener noreferrer");
+        line.createSpan({text:" · "+author.quality_sources+" quality sources across "+author.posts_seen+" observed posts"});
       }
     } catch(e) {
       root.createEl("p",{text:"Collector unavailable: "+String(e)});
