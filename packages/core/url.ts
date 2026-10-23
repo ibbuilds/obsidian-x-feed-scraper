@@ -2,7 +2,7 @@ import {isIP} from "node:net";
 import type {Post} from "./types.ts";
 
 const DROP = new Set(["fbclid", "gclid", "dclid", "igshid", "mc_cid", "mc_eid", "ref_src", "ref_url", "si"]);
-const X_HOSTS = new Set(["x.com", "www.x.com", "twitter.com", "www.twitter.com", "t.co"]);
+const X_HOSTS = new Set(["x.com", "www.x.com", "twitter.com", "www.twitter.com"]);
 
 export function normalizeUrl(value: string): string {
   const url = new URL(value.trim());
