@@ -66,7 +66,10 @@ test("failed duplicate fixture writes are recoverable",()=>{
     const bad=[...fixture,{...fixture[0],id:"",text:"https://example.org/valid"}];
     const result=ingest(db,bad,profile);
     assert.ok(result.posts>=4);
-    assert.equal(new Store(db).stats().sources,3);
+    assert.equal(result.errors,1);
+    const store=new Store(db);
+    assert.equal(store.stats().sources,3);
+    store.close();
   } finally {rmSync(root,{recursive:true,force:true});}
 });
 
