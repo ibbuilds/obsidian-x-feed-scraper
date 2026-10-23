@@ -3,6 +3,7 @@ import {existsSync, mkdirSync, readFileSync, renameSync, writeFileSync, unlinkSy
 import {join, resolve} from "node:path";
 import {Store} from "../storage/store.ts";
 import type {Source} from "./types.ts";
+import {importReferences} from "./pipeline.ts";
 
 function oneLine(s: string,limit=500):string {
   return s.replace(/[\u0000-\u001f\u007f]/g," ").trim().slice(0,limit);
@@ -83,12 +84,14 @@ export function exportToVault(dbPath:string,vaultPath:string): {created:number;u
   mkdirSync(join(folder,"Candidates"),{recursive:true});
   mkdirSync(join(folder,"Approved"),{recursive:true});
   mkdirSync(join(folder,"Reports"),{recursive:true});
+  const referencesFile=join(root,"References.md");
+  const library=existsSync(referencesFile)?importReferences(readFileSync(referencesFile,"utf8")):new Set<string>();
   const store=new Store(dbPath);
   const result={created:0,unchanged:0,conflicts:0,skipped:0};
   try {
     const all=store.listSources(undefined,undefined,500);
     for (const source of all) {
-      if (source.status==="rejected" || source.category==="existing_reference" ||
+      if (library.has(source.url) || source.status==="rejected" || source.category==="existing_reference" ||
           (source.category==="uncategorized" && source.status!=="approved")) {
         result.skipped++;continue;
       }
