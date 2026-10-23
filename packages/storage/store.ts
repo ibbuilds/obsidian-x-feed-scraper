@@ -130,6 +130,14 @@ export class Store {
     ).all(safeLimit,safeOffset) as Row[];
     return rows.map(asSource);
   }
+  listVisualPosts(limit=200):Row[] {
+    return this.db.prepare(
+      "SELECT p.id,p.connector,p.url,p.author,p.username,p.images_json,p.first_seen "+
+      "FROM posts p WHERE p.images_json != '[]' AND NOT EXISTS "+
+      "(SELECT 1 FROM post_sources ps WHERE ps.connector=p.connector AND ps.post_id=p.id) "+
+      "ORDER BY p.last_seen DESC LIMIT ?"
+    ).all(Math.max(1,Math.min(1000,Math.floor(limit)))) as Row[];
+  }
   listPosts(limit=100): Row[] {return this.db.prepare("SELECT id,connector,url,author,username,text,first_seen,last_seen,processing_status FROM posts ORDER BY last_seen DESC LIMIT ?").all(Math.min(500,Math.max(1,limit))) as Row[];}
   review(id: number, decision: "approved"|"rejected"|"needs_review"|"excellent", reason: string): Source {
     if (!reason.trim()) throw new Error("Review reason is required");
