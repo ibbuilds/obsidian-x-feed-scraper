@@ -27,3 +27,8 @@ test("IP and loopback destinations cannot be used for enrichment",()=>{
   assert.equal(isLocalOrUnsafeAddress("8.8.8.8"),false);
   assert.equal(safeHostname("https://example.com"),"example.com");
 });
+
+test("shortened t.co links remain explicit unresolved candidates",()=>{
+  const urls=extractUrls({...post,text:"Worth reading https://t.co/aBcDe"});
+  assert.deepEqual(urls,["https://t.co/aBcDe"]);
+});
