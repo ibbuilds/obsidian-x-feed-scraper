@@ -3,6 +3,7 @@ import {mkdirSync} from "node:fs";
 import {dirname} from "node:path";
 import {randomUUID} from "node:crypto";
 import type {Evaluation, Metadata, Post, Source, Status} from "../core/types.ts";
+import {normalizeUrl} from "../core/url.ts";
 
 type Row = Record<string, unknown>;
 function asSource(row: Row): Source {
@@ -30,6 +31,7 @@ export class Store {
       "CREATE TABLE IF NOT EXISTS reviews (id INTEGER PRIMARY KEY, source_id INTEGER NOT NULL REFERENCES sources(id), decision TEXT NOT NULL, reason TEXT NOT NULL, reviewed_at TEXT NOT NULL);" +
       "CREATE TABLE IF NOT EXISTS errors (id INTEGER PRIMARY KEY, run_id TEXT REFERENCES runs(id), post_id TEXT, message TEXT NOT NULL, occurred_at TEXT NOT NULL);" +
       "CREATE TABLE IF NOT EXISTS checkpoints (connector TEXT PRIMARY KEY, last_run_id TEXT, updated_at TEXT NOT NULL);" +
+      "CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);" +
       "CREATE INDEX IF NOT EXISTS idx_source_status_score ON sources(status,score DESC);" +
       "CREATE INDEX IF NOT EXISTS idx_sightings_post ON sightings(connector,post_id);" +
       "CREATE INDEX IF NOT EXISTS idx_post_sources_source ON post_sources(source_id);"
@@ -53,6 +55,7 @@ export class Store {
   }
   savePost(runId: string, connector: string, post: Post): boolean {
     if (!post.id?.trim() || !post.url?.trim()) throw new Error("Post requires nonempty ID and URL");
+    normalizeUrl(post.url);
     const now = new Date().toISOString();
     const result = this.db.prepare("INSERT OR IGNORE INTO posts(id,connector,url,author,username,text,published_at,images_json,first_seen,last_seen,processing_status) VALUES (?,?,?,?,?,?,?,?,?,?,'processing')")
       .run(post.id, connector, post.url, post.author, post.username, post.text, post.publishedAt || null, JSON.stringify(post.images || []), now, now);
@@ -144,6 +147,31 @@ export class Store {
     const counts = this.db.prepare("SELECT (SELECT count(*) FROM posts) posts,(SELECT count(*) FROM sources) sources,(SELECT count(*) FROM post_sources) links,(SELECT count(*) FROM sources WHERE status='high_quality') high_quality,(SELECT count(*) FROM sources WHERE status='needs_review') needs_review,(SELECT count(*) FROM sources WHERE status='approved') approved,(SELECT count(*) FROM errors) errors").get() as Row;
     const run = this.db.prepare("SELECT id,connector,started_at,ended_at,status,posts_seen,sources_new,duplicates FROM runs ORDER BY started_at DESC LIMIT 1").get() || null;
     return {...counts,lastRun:run,checkpoint:this.db.prepare("SELECT * FROM checkpoints ORDER BY updated_at DESC LIMIT 1").get() || null};
+  }
+  paused():boolean {
+    const row=this.db.prepare("SELECT value FROM settings WHERE key='paused'").get() as Row|undefined;
+    return row?.value==="true";
+  }
+  setPaused(paused:boolean):void {
+    this.db.prepare("INSERT INTO settings(key,value) VALUES('paused',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value").run(paused?"true":"false");
+  }
+  recommendations(limit=30):{posts:Row[];authors:Row[]} {
+    const size=Math.max(1,Math.min(100,limit));
+    const posts=this.db.prepare(
+      "SELECT p.url post_url,p.author,p.username,MAX(s.score) score,"+
+      "GROUP_CONCAT(DISTINCT s.normalized_url) sources, GROUP_CONCAT(DISTINCT s.category) categories "+
+      "FROM posts p JOIN post_sources ps ON ps.connector=p.connector AND ps.post_id=p.id "+
+      "JOIN sources s ON s.id=ps.source_id WHERE s.status IN ('approved','high_quality') "+
+      "GROUP BY p.connector,p.id ORDER BY score DESC LIMIT ?").all(size) as Row[];
+    const authors=this.db.prepare(
+      "SELECT p.author,p.username,COUNT(DISTINCT p.id) posts_seen,"+
+      "COUNT(DISTINCT CASE WHEN s.status='approved' THEN s.id END) approved_sources,"+
+      "COUNT(DISTINCT CASE WHEN s.status IN ('approved','high_quality') THEN s.id END) quality_sources,"+
+      "GROUP_CONCAT(DISTINCT CASE WHEN s.status IN ('approved','high_quality') THEN s.category END) categories "+
+      "FROM posts p LEFT JOIN post_sources ps ON ps.connector=p.connector AND ps.post_id=p.id "+
+      "LEFT JOIN sources s ON s.id=ps.source_id GROUP BY p.username "+
+      "HAVING quality_sources>0 ORDER BY approved_sources DESC,quality_sources DESC,posts_seen DESC LIMIT ?").all(size) as Row[];
+    return {posts,authors};
   }
   history(limit=20): Row[] {
     return this.db.prepare("SELECT * FROM runs ORDER BY started_at DESC LIMIT ?").all(Math.max(1,Math.min(100,limit))) as Row[];
