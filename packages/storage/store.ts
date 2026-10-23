@@ -52,6 +52,7 @@ export class Store {
     }
   }
   savePost(runId: string, connector: string, post: Post): boolean {
+    if (!post.id?.trim() || !post.url?.trim()) throw new Error("Post requires nonempty ID and URL");
     const now = new Date().toISOString();
     const result = this.db.prepare("INSERT OR IGNORE INTO posts(id,connector,url,author,username,text,published_at,images_json,first_seen,last_seen,processing_status) VALUES (?,?,?,?,?,?,?,?,?,?,'processing')")
       .run(post.id, connector, post.url, post.author, post.username, post.text, post.publishedAt || null, JSON.stringify(post.images || []), now, now);
