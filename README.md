@@ -56,7 +56,7 @@ To compare against your real library and create new notes:
 The collector reads <vault>/References.md but **never edits it**. It creates files in
 X Feed Scraper/Candidates and X Feed Scraper/Approved, run reports under X Feed Scraper/Reports,
 plus X Feed Scraper/Sources.base.
-Conflicting, manually edited notes are never replaced. Approved notes still require a
+Every export rechecks References.md for duplicates. Conflicting, manually edited notes are never replaced. Approved notes still require a
 separate explicit human decision before entering References.md.
 
 ## Local plugin / service (desktop Obsidian)
