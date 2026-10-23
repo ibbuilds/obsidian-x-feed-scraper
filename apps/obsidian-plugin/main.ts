@@ -20,7 +20,7 @@ interface Source {
   firstSeen:string;postUrl?:string;author?:string;
 }
 interface Stats {
-  posts:number;sources:number;links:number;high_quality:number;
+  posts:number;visuals:number;sources:number;links:number;high_quality:number;
   needs_review:number;approved:number;errors:number;
   active:boolean;paused:boolean;connectedSource:string;
   personalizedXFeed:string;feedUrl?:string|null;
@@ -140,15 +140,16 @@ class SourceView extends ItemView {
     try{
       const query="/sources?limit=100"+(this.status?"&status="+encodeURIComponent(this.status):"")+
         (this.query?"&q="+encodeURIComponent(this.query):"");
-      const [stats,sources,recs,history]=await Promise.all([
+      const [stats,sources,recs,history,visuals]=await Promise.all([
         this.plugin.call("/status") as Promise<Stats>,
         this.plugin.call(query) as Promise<Source[]>,
         this.plugin.call("/recommendations") as Promise<Recommendations>,
-        this.plugin.call("/history") as Promise<Array<{started_at:string;status:string;posts_seen:number;sources_new:number;duplicates:number}>>
+        this.plugin.call("/history") as Promise<Array<{started_at:string;status:string;posts_seen:number;sources_new:number;duplicates:number}>>,
+        this.plugin.call("/visuals") as Promise<Array<{id:string;url:string;author:string;first_seen:string}>>
       ]);
       root.createEl("div",{cls:"xfs-stats",text:"Source: "+stats.connectedSource+
         " · Posts "+stats.posts+" · Unique sources "+stats.sources+
-        " · Review "+stats.needs_review+" · High quality "+stats.high_quality+
+        " · Review "+stats.needs_review+" · Visuals "+stats.visuals+" · High quality "+stats.high_quality+
         " · Approved "+stats.approved+" · Errors "+stats.errors});
       root.createEl("p",{cls:"xfs-meta",text:stats.paused?"Paused":
         stats.active?"Synchronization running":"Collector active; service bound to localhost only"});
@@ -212,6 +213,13 @@ class SourceView extends ItemView {
               await this.draw();
             }).open());
         }
+      }
+      const visualSection=root.createEl("details");
+      visualSection.createEl("summary",{text:"Visual-only references ("+visuals.length+")"});
+      visualSection.createEl("p",{text:"No external project URL was found. Image links are kept only for human review."});
+      for(const visual of visuals){
+        const item=visualSection.createDiv();
+        external(item,visual.author+" · "+visual.first_seen,visual.url);
       }
       const log=root.createEl("details");
       log.createEl("summary",{text:"Run history"});
