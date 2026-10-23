@@ -57,6 +57,7 @@ test("read-only References import and safe Obsidian export preserve manually edi
     assert.equal(readFileSync(join(approvedDir,approvedFiles[0]),"utf8"),modified);
     assert.equal(readFileSync(join(vault,"References.md"),"utf8"),references);
     assert.equal(existsSync(join(vault,"X Feed Scraper","Sources.base")),true);
+    assert.equal(readdirSync(join(vault,"X Feed Scraper","Reports")).length,1);
   } finally {rmSync(root,{recursive:true,force:true});}
 });
 test("failed duplicate fixture writes are recoverable",()=>{
