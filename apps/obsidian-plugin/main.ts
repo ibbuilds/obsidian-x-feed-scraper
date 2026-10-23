@@ -42,7 +42,7 @@ class ScraperView extends ItemView {
     root.createEl("h3",{text:"X Feed Scraper"});
     if (!this.plugin.token) {
       root.createEl("p",{text:"Enter the local bridge token in the plugin settings. It is held in memory and not saved to the vault."});
-      this.button(root,"Open settings",()=>this.plugin.app.setting.open());
+      root.createEl("p",{text:"Obsidian Settings → Community Plugins → X Feed Scraper → Options."});
       return;
     }
     try {
@@ -98,7 +98,7 @@ class ScraperSettings extends PluginSettingTab {
       }));
     new Setting(containerEl).setName("Local access token (session only)")
       .setDesc("Paste the value of XFS_API_TOKEN. Not persisted to plugin data or the vault.")
-      .addText(t=>t.setPlaceholder("Token of 24+ characters").onChange(value=>{this.plugin.token=value;}));
+      .addText(t=>{t.setPlaceholder("Token of 24+ characters").onChange(value=>{this.plugin.token=value;});t.inputEl.type="password";});
     containerEl.createEl("p",{text:"Start the collector separately with npm run serve -- --fixture ... . The plugin never starts duplicate processes."});
   }
 }
