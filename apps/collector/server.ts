@@ -128,6 +128,8 @@ export function startServer(config:ServerOptions):ReturnType<typeof createServer
         }else if(req.method==="GET"&&url.pathname==="/sources"){
           json(res,200,store.listSources(url.searchParams.get("status")||undefined,
             url.searchParams.get("q")||undefined,Number(url.searchParams.get("limit")||100)));
+        }else if(req.method==="GET"&&url.pathname==="/visuals"){
+          json(res,200,store.listVisualPosts(200));
         }else if(req.method==="GET"&&url.pathname==="/posts"){
           json(res,200,store.listPosts(100));
         }else if(req.method==="GET"&&url.pathname==="/recommendations"){
