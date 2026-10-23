@@ -122,7 +122,14 @@ export function startServer(config:ServerOptions):ReturnType<typeof createServer
       }
       const store=new Store(config.db);
       try{
-        if(req.method==="GET"&&url.pathname==="/status"){
+        if(req.method==="GET"&&url.pathname==="/source"){
+          const id=Number(url.searchParams.get("id"));
+          if(!Number.isSafeInteger(id)||id<1)json(res,400,{error:"Invalid source ID"});
+          else{
+            const source=store.getSource(id);
+            json(res,source?200:404,source||{error:"Source not found"});
+          }
+        }else if(req.method==="GET"&&url.pathname==="/status"){
           json(res,200,{...store.stats(),active:busy,paused,connectedSource:source(),
             personalizedXFeed:"not_available",feedUrl:config.feed||null});
         }else if(req.method==="GET"&&url.pathname==="/sources"){
