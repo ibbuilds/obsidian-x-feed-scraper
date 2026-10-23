@@ -74,11 +74,23 @@ export function startServer(config:ServerOptions):ReturnType<typeof createServer
     if(busy)throw new Error("Synchronization already running");
     if(!config.fixture&&!config.feed)throw new Error("No input configured. Set an RSS URL or import observations manually.");
     busy=true;
+    const connector=config.feed?"rss:"+createHash("sha256").update(config.feed).digest("hex").slice(0,16):"fixture";
+    let inputAcquired=false;
     try{
       const observations=config.feed?await fetchRSS(config.feed):readFixture(config.fixture!);
-      const connector=config.feed?"rss:"+createHash("sha256").update(config.feed).digest("hex").slice(0,16):"fixture";
+      inputAcquired=true;
       const result=ingest(config.db,observations,config.profile,connector,references());
       return {result,export:config.vault?exportToVault(config.db,config.vault):null};
+    }catch(error){
+      if(!inputAcquired){
+        const store=new Store(config.db);
+        try{
+          const id=store.begin(connector);
+          store.error(id,"connector","Connector failed before producing observations");
+          store.finish(id,"failed",0,0,0,"Connector failed before producing observations");
+        }finally{store.close();}
+      }
+      throw error;
     }finally{busy=false;}
   };
   const server=createServer(async(req,res)=>{
@@ -122,7 +134,29 @@ export function startServer(config:ServerOptions):ReturnType<typeof createServer
       }
       const store=new Store(config.db);
       try{
-        if(req.method==="GET"&&url.pathname==="/status"){
+        if(req.method==="GET"&&url.pathname==="/diagnostics"){
+          const row=store.db.prepare("PRAGMA quick_check").get() as Record<string,unknown>|undefined;
+          const integrity=String(row?.quick_check||"unknown");
+          const referencePath=config.references||(config.vault?join(config.vault,"References.md"):undefined);
+          json(res,200,{
+            nodeVersion:process.versions.node,
+            sqliteIntegrity:integrity,
+            vaultPresent:Boolean(config.vault&&existsSync(config.vault)),
+            referencesPresent:Boolean(referencePath&&existsSync(referencePath)),
+            collectorInput:source(),
+            personalizedXFeedAvailable:false,
+            readyForManualImport:integrity==="ok",
+            readyForScheduledDiscovery:integrity==="ok"&&Boolean(config.feed),
+            nextStep:config.feed?"Verify the authorized source in /history":"Configure a permitted RSS URL or import observations manually"
+          });
+        }else if(req.method==="GET"&&url.pathname==="/source"){
+          const id=Number(url.searchParams.get("id"));
+          if(!Number.isSafeInteger(id)||id<1)json(res,400,{error:"Invalid source ID"});
+          else{
+            const source=store.getSource(id);
+            json(res,source?200:404,source||{error:"Source not found"});
+          }
+        }else if(req.method==="GET"&&url.pathname==="/status"){
           json(res,200,{...store.stats(),active:busy,paused,connectedSource:source(),
             personalizedXFeed:"not_available",feedUrl:config.feed||null});
         }else if(req.method==="GET"&&url.pathname==="/sources"){
@@ -161,14 +195,7 @@ export function startServer(config:ServerOptions):ReturnType<typeof createServer
   if(config.intervalMinutes>0){
     const timer=setInterval(()=>{
       if(paused||busy||(!config.feed&&!config.fixture))return;
-      void collect().catch(e=>{
-        const store=new Store(config.db);
-        try{
-          const id=store.begin(source());
-          store.error(id,"scheduler",e instanceof Error?e.message:"Sync failure");
-          store.finish(id,"failed",0,0,0,"Input failed");
-        }finally{store.close();}
-      });
+      void collect().catch(()=>{/* Failure already recorded by the connector or pipeline. */});
     },Math.max(15,config.intervalMinutes)*60_000);
     timer.unref();server.on("close",()=>clearInterval(timer));
   }

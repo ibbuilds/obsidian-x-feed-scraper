@@ -1,6 +1,7 @@
 import {createHash, randomUUID} from "node:crypto";
-import {existsSync, mkdirSync, readFileSync, linkSync, writeFileSync, unlinkSync} from "node:fs";
-import {join, resolve} from "node:path";
+import {existsSync, readFileSync, linkSync, writeFileSync, unlinkSync, lstatSync} from "node:fs";
+import {join} from "node:path";
+import {ensureVaultPath, isSymlink} from "./vault-safe.ts";
 import {Store} from "../storage/store.ts";
 import type {Source} from "./types.ts";
 import {importReferences} from "./pipeline.ts";
@@ -42,6 +43,7 @@ export function renderSource(source: Source): string {
 }
 /** Atomic create-only promotion; never overwrites an existing or edited vault note. */
 function putIfAbsent(path:string,content:string):"created"|"same"|"conflict"{
+  if(isSymlink(path)) return "conflict";
   if(existsSync(path))return readFileSync(path,"utf8")===content?"same":"conflict";
   const temp=path+".tmp-"+randomUUID();
   try{
@@ -52,7 +54,7 @@ function putIfAbsent(path:string,content:string):"created"|"same"|"conflict"{
       return "created";
     }catch(e){
       const code=(e as NodeJS.ErrnoException).code;
-      if(code==="EEXIST")return readFileSync(path,"utf8")===content?"same":"conflict";
+      if(code==="EEXIST")return isSymlink(path)?"conflict":readFileSync(path,"utf8")===content?"same":"conflict";
       if(["EPERM","ENOTSUP","EOPNOTSUPP"].includes(code||"")){
         // Some filesystems do not support hard links; exclusive write still never clobbers.
         try{
@@ -60,7 +62,7 @@ function putIfAbsent(path:string,content:string):"created"|"same"|"conflict"{
           return "created";
         }catch(fallback){
           if((fallback as NodeJS.ErrnoException).code==="EEXIST"){
-            return readFileSync(path,"utf8")===content?"same":"conflict";
+            return isSymlink(path)?"conflict":readFileSync(path,"utf8")===content?"same":"conflict";
           }
           throw fallback;
         }
@@ -112,13 +114,11 @@ const BASE = [
   ""
 ].join("\n");
 export function exportToVault(dbPath:string,vaultPath:string): {created:number;unchanged:number;conflicts:number;skipped:number} {
-  const root=resolve(vaultPath);
-  if (!existsSync(root)) throw new Error("Vault path does not exist");
-  const folder=join(root,"X Feed Scraper");
-  mkdirSync(join(folder,"Candidates"),{recursive:true});
-  mkdirSync(join(folder,"Approved"),{recursive:true});
-  mkdirSync(join(folder,"Reports"),{recursive:true});
-  mkdirSync(join(folder,"Visuals"),{recursive:true});
+  const root=ensureVaultPath(vaultPath,[]);
+  const folder=ensureVaultPath(root,["X Feed Scraper"]);
+  for(const child of ["Candidates","Approved","Reports","Visuals"]){
+    ensureVaultPath(root,["X Feed Scraper",child]);
+  }
   const referencesFile=join(root,"References.md");
   const library=existsSync(referencesFile)?importReferences(readFileSync(referencesFile,"utf8")):new Set<string>();
   const store=new Store(dbPath);
@@ -142,7 +142,9 @@ export function exportToVault(dbPath:string,vaultPath:string): {created:number;u
       // Only discard an unmodified generated candidate once an approved file exists.
       if(source.status==="approved" && value!=="conflict"){
         const oldFile=join(folder,"Candidates",shortId+".md");
-        if(existsSync(oldFile)){
+        if(isSymlink(oldFile)){
+          result.conflicts++;
+        }else if(existsSync(oldFile)){
           const oldContent=readFileSync(oldFile,"utf8");
           const generated=["discovered","pending_analysis","evaluated","high_quality","needs_review"]
             .some(status=>oldContent===renderSource({...source,status:status as Source["status"]}));
@@ -155,7 +157,18 @@ export function exportToVault(dbPath:string,vaultPath:string): {created:number;u
     for(const visual of store.listVisualPosts(1000)){
       const id=createHash("sha256").update(String(visual.connector)+"\0"+String(visual.id)).digest("hex").slice(0,20);
       const images=JSON.parse(String(visual.images_json||"[]")) as unknown[];
-      const media=images.filter(x=>typeof x==="string"&&/^https?:\/\//i.test(x)).slice(0,12) as string[];
+      const media:string[]=[];
+      for(const image of images){
+        if(typeof image!=="string" || image.length>2048)continue;
+        try{
+          const parsed=new URL(image);
+          if(!["https:","http:"].includes(parsed.protocol)||parsed.username||parsed.password)continue;
+          const safe=parsed.toString();
+          if(/[\r\n<>]/.test(safe))continue;
+          media.push(safe);
+        }catch{}
+        if(media.length>=12)break;
+      }
       const text=[
         "---","type: x-feed-visual",
         "status: needs_review",

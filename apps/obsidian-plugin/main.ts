@@ -168,6 +168,17 @@ class SourceView extends ItemView {
         (stats.lastRun.ended_at||stats.lastRun.started_at)+" ("+stats.lastRun.status+")"});
       const actions=root.createDiv({cls:"xfs-actions"});
       button(actions,"Refresh",()=>{void this.draw();});
+      button(actions,"Diagnostics",()=>{
+        void this.plugin.call("/diagnostics").then(result=>{
+          const diag=result as {
+            sqliteIntegrity:string;nodeVersion:string;referencesPresent:boolean;
+            collectorInput:string;personalizedXFeedAvailable:boolean
+          };
+          new Notice("Node "+diag.nodeVersion+" · SQLite "+diag.sqliteIntegrity+
+            " · References.md "+(diag.referencesPresent?"found":"missing")+
+            " · Input "+diag.collectorInput+" · X For You unavailable",9000);
+        }).catch(e=>new Notice(asError(e)));
+      });
       const sync=button(actions,"Sync authorized source",()=>{void this.action("/sync");});
       sync.disabled=stats.connectedSource==="none";
       button(actions,stats.paused?"Resume":"Pause",()=>{void this.action(stats.paused?"/resume":"/pause");});
@@ -420,6 +431,10 @@ export default class ScraperPlugin extends Plugin {
   }
   async addApprovedToReferences(source:Source):Promise<void>{
     if(source.status!=="approved")throw new Error("Only manually approved sources can enter References.md");
+    const fresh=await this.call("/source?id="+encodeURIComponent(String(source.id))) as Source;
+    if(fresh.status!=="approved"||fresh.url!==source.url){
+      throw new Error("Source approval changed since this view was loaded. Refresh before modifying References.md");
+    }
     const file=this.app.vault.getAbstractFileByPath("References.md");
     if(!(file instanceof TFile))throw new Error("References.md not found at vault root");
     const original=await this.app.vault.read(file);

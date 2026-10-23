@@ -55,7 +55,7 @@ export function ingest(dbPath: string, posts: Post[], profile: Profile, connecto
         store.error(runId,post.id,e instanceof Error?e.message:"Unknown per-post error");
       }
     }
-    store.finish(runId,"success",result.posts,result.newSources,result.duplicates);
+    store.finish(runId,result.errors?"partial":"success",result.posts,result.newSources,result.duplicates);
     return result;
   } catch (e) {
     if (runId && store) store.finish(runId,"failed",result.posts,result.newSources,result.duplicates,e instanceof Error?e.message:"unknown");
@@ -64,26 +64,45 @@ export function ingest(dbPath: string, posts: Post[], profile: Profile, connecto
     try{store?.close();}finally{release();}
   }
 }
-export async function enrich(dbPath: string, profile: Profile, references: ReadonlySet<string>, limit=20):Promise<{checked:number;updated:number;failed:number}> {
-  const store = new Store(dbPath);
+export async function enrich(dbPath:string,profile:Profile,references:ReadonlySet<string>,limit=20):
+  Promise<{checked:number;updated:number;failed:number}> {
+  const release=acquireLock(dbPath+".lock");
+  let store:Store|undefined;
   const results={checked:0,updated:0,failed:0};
+  let runId="";
   try {
-    const pending = store.pendingForEnrichment(limit);
-    for (const source of pending) {
+    store=new Store(dbPath);
+    runId=store.begin("metadata");
+    const pending=store.pendingForEnrichment(limit);
+    for(const source of pending){
       results.checked++;
       try {
         const {url:canonical,metadata}=await fetchPublicMetadata(source.url);
-        if (isXUrl(canonical)) throw new Error("Resolved to X, not an external source");
+        if(isXUrl(canonical))throw new Error("Resolved to X, not an external resource");
         const canonicalId=store.repointSource(source.id,normalizeUrl(canonical));
         const old=store.getMetadata(canonicalId);
-        const evaluation=evaluate(normalizeUrl(canonical),metadata.title || old.title || "",old.context,metadata,profile,references);
+        const evaluation=evaluate(normalizeUrl(canonical),metadata.title||old.title||"",old.context,metadata,profile,references);
         const boost=store.preferenceBoost(evaluation.category);
         evaluation.score=Math.max(0,Math.min(100,evaluation.score+boost));
-        if (evaluation.score>=profile.scoreThreshold && evaluation.confidence>=profile.confidenceThreshold) evaluation.status="high_quality";
+        if(evaluation.score>=profile.scoreThreshold&&evaluation.confidence>=profile.confidenceThreshold){
+          evaluation.status="high_quality";
+        }
         store.updateEvaluation(canonicalId,metadata,evaluation);
         results.updated++;
-      } catch {results.failed++;}
+      }catch(error){
+        results.failed++;
+        const message=error instanceof Error?error.message:"Unknown metadata failure";
+        store.error(runId,String(source.id),message.replace(/https?:\/\/\S+/g,"[redacted-url]").slice(0,200));
+      }
     }
+    store.finish(runId,results.failed?"partial":"success",results.checked,0,0);
     return results;
-  } finally {store.close();}
+  }catch(error){
+    if(store&&runId){
+      store.finish(runId,"failed",results.checked,0,0,"Metadata run aborted");
+    }
+    throw error;
+  }finally{
+    try{store?.close();}finally{release();}
+  }
 }
