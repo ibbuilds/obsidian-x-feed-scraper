@@ -1,6 +1,6 @@
 import {openSync,closeSync,readFileSync,unlinkSync,statSync,mkdirSync} from "node:fs";
 import {dirname,join} from "node:path";
-import {normalizeUrl,extractUrls} from "./url.ts";
+import {normalizeUrl,extractUrls,isXUrl} from "./url.ts";
 import {evaluate} from "../quality/evaluate.ts";
 import {fetchPublicMetadata} from "../connectors/metadata.ts";
 import {Store} from "../storage/store.ts";
@@ -86,6 +86,7 @@ export async function enrich(dbPath: string, profile: Profile, references: Reado
       results.checked++;
       try {
         const {url:canonical,metadata}=await fetchPublicMetadata(source.url);
+        if (isXUrl(canonical)) throw new Error("Resolved to X, not an external source");
         const canonicalId=store.repointSource(source.id,normalizeUrl(canonical));
         const old=store.getMetadata(canonicalId);
         const evaluation=evaluate(normalizeUrl(canonical),metadata.title || old.title || "",old.context,metadata,profile,references);
