@@ -80,8 +80,7 @@ export async function enrich(dbPath: string, profile: Profile, references: Reado
   const store = new Store(dbPath);
   const results={checked:0,updated:0,failed:0};
   try {
-    const pending = store.listSources(undefined,undefined,Math.min(100,limit))
-      .filter(s=>s.status!=="approved" && s.status!=="rejected");
+    const pending = store.pendingForEnrichment(limit);
     for (const source of pending) {
       results.checked++;
       try {
