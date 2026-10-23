@@ -168,3 +168,19 @@ test("edited candidate notes are never deleted during approval",()=>{
     assert.equal(readFileSync(path,"utf8"),modified);
   }finally{rmSync(root,{recursive:true,force:true});}
 });
+
+test("public metadata enrichment excludes approved and existing-library sources",()=>{
+  const root=mkdtempSync(join(tmpdir(),"xfs-enrichment-"));
+  const db=join(root,"db.sqlite");
+  try{
+    ingest(db,fixture,profile,"fixture",new Set(["https://motion.dev/docs"]));
+    const store=new Store(db);
+    const items=store.listSources();
+    const candidate=items.find(s=>s.url.includes("github.com"))!;
+    store.review(candidate.id,"approved","Reviewed");
+    const pending=store.pendingForEnrichment(20);
+    assert.ok(pending.every(s=>s.status!=="approved" && s.category!=="existing_reference"));
+    assert.ok(pending.length>=1);
+    store.close();
+  }finally{rmSync(root,{recursive:true,force:true});}
+});
