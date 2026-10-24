@@ -1,0 +1,42 @@
+{
+  "id": "frontend-discovery",
+  "name": "Frontend Resource Discovery",
+  "sources": [
+    {
+      "id": "shared-observations",
+      "adapter": "json-file",
+      "config": {
+        "path": "../shared/observations.json"
+      }
+    }
+  ],
+  "pipeline": [
+    "extract-links"
+  ],
+  "evaluator": "keyword",
+  "policy": {
+    "includeKeywords": [
+      "react",
+      "motion",
+      "interface"
+    ],
+    "excludeKeywords": [
+      "sponsored"
+    ],
+    "minimumScore": 25
+  },
+  "outputs": [
+    {
+      "id": "obsidian-notes",
+      "adapter": "obsidian",
+      "config": {
+        "folder": "Discovery Engine"
+      }
+    }
+  ],
+  "entitySchemas": {
+    "web-resource": {
+      "fields": {}
+    }
+  }
+}

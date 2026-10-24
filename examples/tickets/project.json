@@ -1,0 +1,52 @@
+{
+  "id": "ticket-research",
+  "name": "Ticket Prioritization",
+  "sources": [
+    {
+      "id": "tickets",
+      "adapter": "sample-tickets",
+      "config": {
+        "records": [
+          {
+            "id": "T-1",
+            "title": "Investigate outage",
+            "priority": 5,
+            "description": "Production service"
+          },
+          {
+            "id": "T-2",
+            "title": "Review onboarding copy",
+            "priority": 2,
+            "description": "Content revision"
+          }
+        ]
+      }
+    }
+  ],
+  "pipeline": [
+    "ticket-entity"
+  ],
+  "evaluator": "ticket-priority",
+  "policy": {
+    "includeKeywords": [],
+    "excludeKeywords": [],
+    "minimumScore": 20
+  },
+  "outputs": [
+    {
+      "id": "json",
+      "adapter": "json",
+      "config": {}
+    }
+  ],
+  "entitySchemas": {
+    "ticket": {
+      "fields": {
+        "priority": "number"
+      },
+      "required": [
+        "priority"
+      ]
+    }
+  }
+}

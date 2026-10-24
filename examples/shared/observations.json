@@ -1,0 +1,47 @@
+[
+  {
+    "id": "ui-demo",
+    "type": "community-post",
+    "title": "React motion UI kit",
+    "text": "Reusable motion components for React interfaces",
+    "url": "https://example.org/posts/motion",
+    "urls": [
+      "https://github.com/example/motion-kit"
+    ],
+    "attributes": {
+      "author": "studio"
+    }
+  },
+  {
+    "id": "ui-followup",
+    "type": "community-post",
+    "title": "A second React motion example",
+    "text": "Another reference to the motion kit",
+    "url": "https://example.org/posts/followup",
+    "urls": [
+      "https://github.com/example/motion-kit"
+    ],
+    "attributes": {
+      "author": "designer"
+    }
+  },
+  {
+    "id": "security-note",
+    "type": "security-advisory",
+    "title": "Security advisory CVE-2026-12345",
+    "text": "Security advisory for a package update",
+    "url": "https://example.org/advisories/cve-2026-12345",
+    "attributes": {
+      "severity": "high"
+    }
+  },
+  {
+    "id": "science-note",
+    "type": "research-note",
+    "title": "Fluid dynamics analysis",
+    "text": "Notes about an experimental fluid dynamics protocol without any website",
+    "attributes": {
+      "discipline": "physics"
+    }
+  }
+]
