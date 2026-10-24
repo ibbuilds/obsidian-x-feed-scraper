@@ -272,6 +272,17 @@ class SourceView extends ItemView {
             ).open());
           }
         }
+        const runs=await this.plugin.call("/project/runs?project="+
+          encodeURIComponent(active)) as Array<{connection_id:string;status:string;
+          started_at:string;observations:number;new_entities:number;error?:string}>;
+        const activity=generic.createEl("details");
+        activity.createEl("summary",{text:"Project run history ("+runs.length+")"});
+        for(const run of runs.slice(0,12)){
+          activity.createEl("p",{cls:"xfs-meta",
+            text:run.started_at+" · "+run.connection_id+" · "+run.status+
+              " · "+run.observations+" observations · "+run.new_entities+
+              " new entities"+(run.error?" · "+run.error:"")});
+        }
       }else{
         generic.createEl("p",{cls:"xfs-muted",text:
           "Choose a research project manifest under Settings, or use the independent project CLI."});
