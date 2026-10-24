@@ -7,6 +7,7 @@ on:
       - "scripts/bench-engine.mjs"
       - "scripts/bench-repeat.mjs"
       - "scripts/bench-reprocess.mjs"
+      - "scripts/bench-json-compare.mjs"
       - ".github/workflows/performance.yml"
   workflow_dispatch:
 permissions:
@@ -21,7 +22,7 @@ jobs:
           path: candidate
       - uses: actions/checkout@v4
         with:
-          ref: 894bcf1577d07911f2d000e1464efcecdd324588
+          ref: 939c7c7314db15b709d5c0713571b3a35e82ef37
           path: baseline
       - uses: actions/setup-node@v4
         with:
@@ -30,12 +31,13 @@ jobs:
       - run: npm ci --prefix baseline --no-audit --no-fund
       - name: Profile baseline on a clean SQLite database
         run: |
-          cp candidate/scripts/bench-engine.mjs candidate/scripts/bench-pagination.mjs candidate/scripts/bench-repeat.mjs candidate/scripts/bench-reprocess.mjs baseline/scripts/
+          cp candidate/scripts/bench-engine.mjs candidate/scripts/bench-pagination.mjs candidate/scripts/bench-repeat.mjs candidate/scripts/bench-reprocess.mjs candidate/scripts/bench-json-compare.mjs baseline/scripts/
           cd baseline
           node --experimental-strip-types scripts/bench-engine.mjs 1200 12000 > ../baseline-profile.json
           node --experimental-strip-types scripts/bench-pagination.mjs 6000 50 > ../baseline-pagination.json
           node --experimental-strip-types scripts/bench-repeat.mjs 1800 > ../baseline-repeat.json
           node --experimental-strip-types scripts/bench-reprocess.mjs 2400 > ../baseline-reprocess.json
+          node --experimental-strip-types scripts/bench-json-compare.mjs 16000 > ../baseline-json-compare.json
       - name: Profile candidate with identical synthetic data
         run: |
           cd candidate
@@ -43,6 +45,7 @@ jobs:
           node --experimental-strip-types scripts/bench-pagination.mjs 6000 50 > ../candidate-pagination.json
           node --experimental-strip-types scripts/bench-repeat.mjs 1800 > ../candidate-repeat.json
           node --experimental-strip-types scripts/bench-reprocess.mjs 2400 > ../candidate-reprocess.json
+          node --experimental-strip-types scripts/bench-json-compare.mjs 16000 > ../candidate-json-compare.json
       - name: Compare critical hot paths without source or network dependencies
         run: |
           node --input-type=module - <<'NODE'
@@ -79,8 +82,8 @@ jobs:
             console.log(key+': baseline '+before+' ms, candidate '+after+
               ' ms; ratio '+(after/Math.max(before,0.01)).toFixed(3));
           }
-          if(newRepeat.phases.unchangedMs>=oldRepeat.phases.unchangedMs*0.85){
-            throw new Error('Insufficient speedup on repeated unchanged observations');
+          if(newRepeat.phases.unchangedMs>oldRepeat.phases.unchangedMs*1.5){
+            throw new Error('Unchanged replay regressed more than 50%');
           }
           if(newRepeat.phases.initialMs>oldRepeat.phases.initialMs*1.4){
             throw new Error('Initial ingestion regressed more than 40%');
@@ -91,9 +94,21 @@ jobs:
             const before=oldReprocess.phases[key],after=newReprocess.phases[key];
             console.log('offline '+key+': baseline '+before+' ms, candidate '+after+
               ' ms; ratio '+(after/Math.max(before,0.01)).toFixed(3));
-            if(after>=before*0.8){
-              throw new Error('Offline reassessment must improve by at least 20%: '+key);
+            if(after>before*1.5){
+              throw new Error('Offline reassessment regressed more than 50%: '+key);
             }
+          }
+          const oldJson=JSON.parse(readFileSync('baseline-json-compare.json','utf8'));
+          const newJson=JSON.parse(readFileSync('candidate-json-compare.json','utf8'));
+          if(oldJson.changePath!==newJson.changePath){
+            throw new Error('JSON diff path changed');
+          }
+          for(const name of ['equal','different','diff']){
+            const before=oldJson.phases[name],after=newJson.phases[name];
+            const ratio=after/Math.max(before,0.01);
+            console.log('deep JSON '+name+': baseline '+before+' ms, candidate '+after+
+              ' ms; ratio '+ratio.toFixed(3));
+            if(ratio>=0.65)throw new Error('Insufficient JSON comparison speedup: '+name);
           }
           NODE
       - uses: actions/upload-artifact@v4
@@ -109,4 +124,6 @@ jobs:
             candidate-repeat.json
             baseline-reprocess.json
             candidate-reprocess.json
+            baseline-json-compare.json
+            candidate-json-compare.json
           retention-days: 30
