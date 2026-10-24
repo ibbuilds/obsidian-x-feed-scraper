@@ -180,6 +180,8 @@ export function startServer(config:ServerOptions):ReturnType<typeof createServer
           json(res,200,store.listSources(url.searchParams.get("status")||undefined,
             url.searchParams.get("q")||undefined,Number(url.searchParams.get("limit")||100),
             Number(url.searchParams.get("offset")||0)));
+        }else if(req.method==="GET"&&url.pathname==="/errors"){
+          json(res,200,store.recentErrors(20));
         }else if(req.method==="GET"&&url.pathname==="/visuals"){
           json(res,200,store.listVisualPosts(200));
         }else if(req.method==="GET"&&url.pathname==="/posts"){
