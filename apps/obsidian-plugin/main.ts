@@ -171,7 +171,7 @@ class SourceView extends ItemView {
   private projectPage=0;
   constructor(leaf:WorkspaceLeaf,private plugin:ScraperPlugin){super(leaf);}
   getViewType():string{return VIEW;}
-  getDisplayText():string{return "X Feed Scraper";}
+  getDisplayText():string{return "Discovery Engine";}
   getIcon():string{return "book-open-check";}
   async onOpen():Promise<void>{await this.draw();}
   async onClose():Promise<void>{}
@@ -416,9 +416,9 @@ class ScraperSettings extends PluginSettingTab {
   constructor(private plugin:ScraperPlugin){super(plugin.app,plugin);}
   display():void{
     const root=this.containerEl;root.empty();
-    root.createEl("h3",{text:"X Feed Scraper"});
-    root.createEl("p",{text:"Obsidian launches the included local collector. X For You remains unavailable. "+
-      "RSS is an independent permitted source; leave it blank to import observations manually."});
+    root.createEl("h3",{text:"Discovery Engine"});
+    root.createEl("p",{text:"Configure any research project manifest to activate source adapters and processing pipelines. "+
+      "The previous RSS/manual workflow remains available, and personalized X For You requires an authorized connector."});
     new Setting(root).setName("Launch collector on startup")
       .addToggle(t=>t.setValue(this.plugin.settings.autoStart).onChange(async value=>{
         this.plugin.settings.autoStart=value;await this.plugin.saveSettings();
@@ -520,8 +520,8 @@ export default class ScraperPlugin extends Plugin {
       }
     }
     this.registerView(VIEW,leaf=>new SourceView(leaf,this));
-    this.addRibbonIcon("book-open-check","Open X Feed Scraper",()=>{void this.activate();});
-    this.addCommand({id:"open-candidates",name:"Open curated sources",callback:()=>{void this.activate();}});
+    this.addRibbonIcon("book-open-check","Open Discovery Engine",()=>{void this.activate();});
+    this.addCommand({id:"open-candidates",name:"Open Discovery Engine",callback:()=>{void this.activate();}});
     this.addCommand({id:"sync-authorized-source",name:"Sync authorized source",callback:()=>{
       void this.call("/sync","POST").then(()=>this.redraw()).catch(e=>new Notice(asError(e)));
     }});
