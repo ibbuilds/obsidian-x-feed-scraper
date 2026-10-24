@@ -44,28 +44,6 @@ jobs:
           appendFileSync(process.env.GITHUB_OUTPUT,'tag=v'+pkg.version+'-beta.1\nversion='+pkg.version+'\n');
           NODE
           sha256sum dist/source-scraper.mjs dist/source-scraper-*.tgz dist/obsidian-x-feed-scraper.zip
-      # Explicit project policy: keep only the newly tested GitHub Release.
-      # Keep Git tags and commits for source history and reproducibility.
-      - name: Delete all older GitHub Releases before publishing this version
-        shell: bash
-        env:
-          GH_TOKEN: ${{ github.token }}
-          TAG: ${{ steps.release.outputs.tag }}
-        run: |
-          set -euo pipefail
-          # Capture output directly: process substitution could mask GitHub API errors.
-          releases=$(gh release list --limit 1000 --json tagName --jq '.[].tagName')
-          while IFS= read -r old; do
-            [[ -z "$old" || "$old" == "$TAG" ]] && continue
-            echo "Deleting superseded GitHub Release $old (preserving its Git tag)"
-            gh release delete "$old" --yes
-          done <<< "$releases"
-          remaining=$(gh release list --limit 1000 --json tagName --jq '.[].tagName')
-          while IFS= read -r old; do
-            [[ -z "$old" || "$old" == "$TAG" ]] && continue
-            echo "ERROR: superseded release still published: $old"
-            exit 1
-          done <<< "$remaining"
       - name: Publish tested Source Scraper CLI and optional Obsidian integration
         env:
           GH_TOKEN: ${{ github.token }}
@@ -83,4 +61,48 @@ jobs:
               --target "${{ github.event.workflow_run.head_sha }}" \
               --prerelease \
               --notes-file "docs/releases/${VERSION}.md"
+          fi
+      - name: Verify the new release before deleting any previous download
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.release.outputs.tag }}
+          VERSION: ${{ steps.release.outputs.version }}
+          EXPECTED_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          set -euo pipefail
+          actual_tag_sha=$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/${TAG}" --jq '.object.sha')
+          if [[ "$actual_tag_sha" != "$EXPECTED_SHA" ]]; then
+            echo "ERROR: release tag does not match the tested commit"
+            exit 1
+          fi
+          actual=$(gh release view "$TAG" --json assets --jq '.assets[].name' | LC_ALL=C sort)
+          expected=$(printf '%s\n' "obsidian-x-feed-scraper.zip" "source-scraper-${VERSION}.tgz" "source-scraper.mjs" | LC_ALL=C sort)
+          if [[ "$actual" != "$expected" ]]; then
+            echo "ERROR: new release assets are missing or unexpected"
+            echo "Expected: $expected"
+            echo "Actual: $actual"
+            exit 1
+          fi
+          echo "Verified $TAG at $EXPECTED_SHA with all three release assets"
+      # Explicit project policy: keep only the newly tested GitHub Release.
+      # Keep Git tags and commits for source history and reproducibility.
+      - name: Delete superseded GitHub Releases after verifying the new one
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.release.outputs.tag }}
+        run: |
+          set -euo pipefail
+          # Capture output directly: process substitution could mask GitHub API errors.
+          releases=$(gh release list --limit 1000 --json tagName --jq '.[].tagName')
+          while IFS= read -r old; do
+            [[ -z "$old" || "$old" == "$TAG" ]] && continue
+            echo "Deleting superseded GitHub Release $old (preserving its Git tag)"
+            gh release delete "$old" --yes
+          done <<< "$releases"
+          remaining=$(gh release list --limit 1000 --json tagName --jq '.[].tagName')
+          if [[ "$remaining" != "$TAG" ]]; then
+            echo "ERROR: expected only $TAG, found: $remaining"
+            exit 1
           fi

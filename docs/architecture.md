@@ -51,6 +51,27 @@ exports in pages of at most 500 instead of collecting 100k fully enriched
 records in memory before serializing. Create-only export files are removed on
 a failed write. See [offline benchmark](performance.md).
 
+## Repeated-source and offline-replay efficiency
+
+A source page still runs all configured processors and evaluators before it
+reaches SQLite. When a previously observed item has **identical normalized
+JSON, the same immutable revision hash, identical active source drafts and
+evidence, the same evaluator identity and the same current assessments**, the
+database writer avoids deactivating/reinserting unchanged mentions and
+rewriting assessment rows. It still refreshes observation `last_seen` and
+commits the source cursor with its page. Legacy identities requiring
+cross-provider collision checks deliberately retain the full write path.
+Changes, missing history or evaluator policy differences use the original
+transactional change/watch logic.
+
+Offline `reprocessProject` continues to reevaluate original saved observations
+without source requests or external output delivery. It reuses a prepared
+query and evaluator and commits up to 100 entity assessments per transaction,
+checking cancellation immediately before each commit. A failed batch does not
+leave half-applied assessments; completed prior batches remain available for
+resume. Source observation versions, entity change events and human review
+records are never overwritten by offline reprocessing.
+
 ## Failure boundaries
 
 All pages are schema-checked before writing. Each source page, its resulting entities/mentions and its next cursor are committed as **one SQLite transaction**. A failed page never advances its cursor. Processing runs are recorded with success/failure, and separate project sources can continue independently.

@@ -5,6 +5,8 @@ on:
       - "packages/**"
       - "apps/collector/**"
       - "scripts/bench-engine.mjs"
+      - "scripts/bench-repeat.mjs"
+      - "scripts/bench-reprocess.mjs"
       - ".github/workflows/performance.yml"
   workflow_dispatch:
 permissions:
@@ -19,7 +21,7 @@ jobs:
           path: candidate
       - uses: actions/checkout@v4
         with:
-          ref: 1bc4759ec514b74d974d318af35f7b27bb2dd6b9
+          ref: 894bcf1577d07911f2d000e1464efcecdd324588
           path: baseline
       - uses: actions/setup-node@v4
         with:
@@ -28,15 +30,19 @@ jobs:
       - run: npm ci --prefix baseline --no-audit --no-fund
       - name: Profile baseline on a clean SQLite database
         run: |
-          cp candidate/scripts/bench-engine.mjs candidate/scripts/bench-pagination.mjs baseline/scripts/
+          cp candidate/scripts/bench-engine.mjs candidate/scripts/bench-pagination.mjs candidate/scripts/bench-repeat.mjs candidate/scripts/bench-reprocess.mjs baseline/scripts/
           cd baseline
           node --experimental-strip-types scripts/bench-engine.mjs 1200 12000 > ../baseline-profile.json
           node --experimental-strip-types scripts/bench-pagination.mjs 6000 50 > ../baseline-pagination.json
+          node --experimental-strip-types scripts/bench-repeat.mjs 1800 > ../baseline-repeat.json
+          node --experimental-strip-types scripts/bench-reprocess.mjs 2400 > ../baseline-reprocess.json
       - name: Profile candidate with identical synthetic data
         run: |
           cd candidate
           node --experimental-strip-types scripts/bench-engine.mjs 1200 12000 > ../candidate-profile.json
           node --experimental-strip-types scripts/bench-pagination.mjs 6000 50 > ../candidate-pagination.json
+          node --experimental-strip-types scripts/bench-repeat.mjs 1800 > ../candidate-repeat.json
+          node --experimental-strip-types scripts/bench-reprocess.mjs 2400 > ../candidate-reprocess.json
       - name: Compare critical hot paths without source or network dependencies
         run: |
           node --input-type=module - <<'NODE'
@@ -54,8 +60,8 @@ jobs:
             throw new Error('Review lookup did not use the new per-entity index');
           }
           for(const key of ['listEntitiesMs','getEvidenceMs']){
-            if(b.phases[key]>=a.phases[key]*0.85){
-              throw new Error('Insufficient speedup in indexed hot path: '+key);
+            if(b.phases[key]>a.phases[key]*2){
+              throw new Error('Large regression in indexed hot path: '+key);
             }
           }
           const oldPages=JSON.parse(readFileSync('baseline-pagination.json','utf8'));
@@ -64,7 +70,30 @@ jobs:
             const before=oldPages.phases[key],after=newPages.phases[key];
             console.log(key+': baseline '+before+' ms, candidate '+after+
               ' ms; ratio '+(after/Math.max(before,0.01)).toFixed(3));
-            if(after>=before*0.85)throw new Error('Insufficient pagination speedup: '+key);
+            if(after>before*2)throw new Error('Large pagination regression: '+key);
+          }
+          const oldRepeat=JSON.parse(readFileSync('baseline-repeat.json','utf8'));
+          const newRepeat=JSON.parse(readFileSync('candidate-repeat.json','utf8'));
+          for(const key of ['initialMs','unchangedMs','changedMs']){
+            const before=oldRepeat.phases[key],after=newRepeat.phases[key];
+            console.log(key+': baseline '+before+' ms, candidate '+after+
+              ' ms; ratio '+(after/Math.max(before,0.01)).toFixed(3));
+          }
+          if(newRepeat.phases.unchangedMs>=oldRepeat.phases.unchangedMs*0.85){
+            throw new Error('Insufficient speedup on repeated unchanged observations');
+          }
+          if(newRepeat.phases.initialMs>oldRepeat.phases.initialMs*1.4){
+            throw new Error('Initial ingestion regressed more than 40%');
+          }
+          const oldReprocess=JSON.parse(readFileSync('baseline-reprocess.json','utf8'));
+          const newReprocess=JSON.parse(readFileSync('candidate-reprocess.json','utf8'));
+          for(const key of ['reprocessMs','repeatMs']){
+            const before=oldReprocess.phases[key],after=newReprocess.phases[key];
+            console.log('offline '+key+': baseline '+before+' ms, candidate '+after+
+              ' ms; ratio '+(after/Math.max(before,0.01)).toFixed(3));
+            if(after>=before*0.8){
+              throw new Error('Offline reassessment must improve by at least 20%: '+key);
+            }
           }
           NODE
       - uses: actions/upload-artifact@v4
@@ -76,4 +105,8 @@ jobs:
             candidate-profile.json
             baseline-pagination.json
             candidate-pagination.json
+            baseline-repeat.json
+            candidate-repeat.json
+            baseline-reprocess.json
+            candidate-reprocess.json
           retention-days: 30

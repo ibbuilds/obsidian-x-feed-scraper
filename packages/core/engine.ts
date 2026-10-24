@@ -162,21 +162,34 @@ export async function reprocessProject(dbPath:string,project:ProjectDefinition,r
     const entities=store.db.prepare(
       "SELECT entity_key,type,title,url,attributes_json FROM kb_entities WHERE project_id=?"
     ).all(project.id) as Array<{entity_key:string;type:string;title:string;url:string|null;attributes_json:string}>;
+    const observationsForEntity=store.db.prepare(
+      "SELECT o.connection_id,o.item_id,o.type,o.title,o.text,o.url,o.attributes_json,o.media_json,o.occurred_at,"+
+      "o.observation_json AS current_observation_json,m.observation_json AS mention_observation_json,"+
+      "m.evidence_json,m.draft_json "+
+      "FROM kb_mentions m JOIN kb_observations o ON o.project_id=m.project_id "+
+      "AND o.connection_id=m.connection_id AND o.item_id=m.item_id "+
+      "WHERE m.project_id=? AND m.entity_key=? AND m.active=1"
+    );
+    const sources=new Map(project.sources.map(source=>[source.id,source]));
+    const evaluator=registry.evaluators.get(project.evaluator)!;
+    const pending:Array<{key:string;values:Array<{
+      connectionId:string;observationId:string;assessment:Assessment
+    }>}>=[];
+    const flush=()=>{
+      if(signal.aborted)throw new Error("Reprocessing aborted");
+      if(!pending.length)return;
+      store!.updateMentionAssessmentsBatch(project.id,pending,project.evaluator);
+      counters.reassessed+=pending.length;
+      pending.length=0;
+    };
     for(const entity of entities){
       if(signal.aborted)throw new Error("Reprocessing aborted");
       counters.entities++;
-      const observations=store.db.prepare(
-        "SELECT o.connection_id,o.item_id,o.type,o.title,o.text,o.url,o.attributes_json,o.media_json,o.occurred_at,"+
-        "o.observation_json AS current_observation_json,m.observation_json AS mention_observation_json,"+
-        "m.evidence_json,m.draft_json "+
-        "FROM kb_mentions m JOIN kb_observations o ON o.project_id=m.project_id "+
-        "AND o.connection_id=m.connection_id AND o.item_id=m.item_id "+
-        "WHERE m.project_id=? AND m.entity_key=? AND m.active=1"
-      ).all(project.id,entity.entity_key) as Array<Record<string,unknown>>;
+      const observations=observationsForEntity.all(project.id,entity.entity_key) as Array<Record<string,unknown>>;
       const assessments:Array<{connectionId:string;observationId:string;assessment:Assessment}>=[];
       for(const row of observations){
         if(signal.aborted)throw new Error("Reprocessing aborted");
-        const source=project.sources.find(s=>s.id===row.connection_id);
+        const source=sources.get(String(row.connection_id));
         if(!source)continue;
         // Complete inputs retain optional/empty values and per-mention evidence.
         // Legacy rows without original snapshots use only their known fields.
@@ -191,16 +204,17 @@ export async function reprocessProject(dbPath:string,project:ProjectDefinition,r
           {key:entity.entity_key,type:entity.type,title:entity.title,url:entity.url??undefined,
             attributes:JSON.parse(entity.attributes_json),
             evidence:JSON.parse(String(row.evidence_json||"[]"))},project.entitySchemas);
-        const assessment=validateAssessment(await registry.evaluators.get(project.evaluator)!.assess(
+        const assessment=validateAssessment(await evaluator.assess(
           {project,source,signal},structuredClone(observation),structuredClone(draft)));
         assessments.push({connectionId:source.id,observationId:String(row.item_id),assessment});
       }
       if(signal.aborted)throw new Error("Reprocessing aborted");
       if(assessments.length){
-        store.updateMentionAssessments(project.id,entity.entity_key,assessments,project.evaluator);
-        counters.reassessed++;
+        pending.push({key:entity.entity_key,values:assessments});
+        if(pending.length===100)flush();
       }
     }
+    flush();
     return counters;
   }finally{try{store?.close();}finally{release();}}
 }
