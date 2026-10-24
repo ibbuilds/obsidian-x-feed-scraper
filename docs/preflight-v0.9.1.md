@@ -4,7 +4,7 @@
 
 | Area | Evidence | Boundary |
 | --- | --- | --- |
-| Platform and CLI | `node scripts/ci-smoke.mjs` runs direct Node commands; requires 4 imported posts, 3 sources, 4 links, repeat-import idempotence, queryable generic project entities, and a nonzero invalid-input exit | These are synthetic fixtures, not a personalized X feed |
+| Platform and CLI | `node scripts/ci-smoke.mjs` runs direct Node commands; requires 4 imported posts, 3 sources, 4 links, repeat-import idempotence, queryable generic project entities, a nonzero invalid-input exit, and a nonzero partial-import exit while valid records remain committed | These are synthetic fixtures, not a personalized X feed |
 | Core | `npm run check && npm run package && npm test` includes observations/replay, namespaces, migration, change events, webhook security and cancellation | Heuristic assessments are not universal ground truth |
 | Obsidian Desktop | Linux CI launches the real app with an isolated synthetic vault and 6 end-to-end cases | This is not a test on the owner's machine/OS/vault |
 | Public sources | SSRF and redirect handling are tested; X-owned hosts and `t.co` variants cannot be automatically retrieved | An authorized For You connector remains unavailable |
