@@ -2,7 +2,7 @@
 
 **Open-source, local-first engine that turns observations from user-authorized sources into structured, evidence-linked, reviewable knowledge.** It is not a news summarizer. Sources, extractors, evaluators and outputs are interchangeable.
 
-Version **0.9.0 beta**. The Obsidian plugin retains its original ID `x-feed-scraper`, repository URL and ZIP filename to protect existing installations.
+Version **0.9.1 beta**. Use the direct Node CLI shown below on Windows/PowerShell: npm argument forwarding previously produced misleading empty smoke results. The Obsidian plugin retains its original ID `x-feed-scraper`, repository URL and ZIP filename to protect existing installations.
 
 ## What it does
 
@@ -45,33 +45,33 @@ Requirements: Node.js **22.16+**, Git and npm.
 
 Run the **frontend resource** example:
 
-    npm run cli -- project sync --project examples/frontend/project.json --db ./data/demo.db
-    npm run cli -- project entities --id frontend-discovery --db ./data/demo.db
-    npm run cli -- project export --project examples/frontend/project.json --db ./data/demo.db --vault /absolute/path/to/a/TEST-vault
+    node --experimental-strip-types apps/collector/cli.ts project sync --project examples/frontend/project.json --db ./data/demo.db
+    node --experimental-strip-types apps/collector/cli.ts project entities --id frontend-discovery --db ./data/demo.db
+    node --experimental-strip-types apps/collector/cli.ts project export --project examples/frontend/project.json --db ./data/demo.db --vault /absolute/path/to/a/TEST-vault
 
 Use an explicitly trusted **MCP server** as a source—no engine fork required:
 
-    npm run cli -- project sync --project examples/mcp/project.json --db ./data/mcp-demo.db
-    npm run cli -- project entities --id mcp-lab-research --db ./data/mcp-demo.db
+    node --experimental-strip-types apps/collector/cli.ts project sync --project examples/mcp/project.json --db ./data/mcp-demo.db
+    node --experimental-strip-types apps/collector/cli.ts project entities --id mcp-lab-research --db ./data/mcp-demo.db
 
 The example uses a synthetic MCP server; real providers can expose normalized observations or use a safe declarative JSON field mapping. Modern 2026-07-28 and legacy 2025 MCP stdio are supported. See `docs/mcp-stdio.md`.
 
 Run a **different research project** against the same input observations:
 
-    npm run cli -- project sync --project examples/security/project.json --db ./data/demo.db
-    npm run cli -- project entities --id security-research --db ./data/demo.db
-    npm run cli -- project reprocess --project examples/security/project.json --db ./data/demo.db
+    node --experimental-strip-types apps/collector/cli.ts project sync --project examples/security/project.json --db ./data/demo.db
+    node --experimental-strip-types apps/collector/cli.ts project entities --id security-research --db ./data/demo.db
+    node --experimental-strip-types apps/collector/cli.ts project reprocess --project examples/security/project.json --db ./data/demo.db
 
 Or use a **third-party adapter + processor + evaluator** without modifying our engine:
 
-    npm run cli -- project sync --project examples/tickets/project.json --db ./data/demo.db --extension examples/extensions/tickets.cjs
+    node --experimental-strip-types apps/collector/cli.ts project sync --project examples/tickets/project.json --db ./data/demo.db --extension examples/extensions/tickets.cjs
 
 All example inputs are synthetic. Project manifests define source adapters, an ordered pipeline, evaluator, entity schemas, policy and outputs. JSON input file paths are resolved relative to each manifest.
 
 ## Install in Obsidian Desktop
 
 1. Install Obsidian Desktop **1.9.2+** and Node.js **22.16+**.
-2. Download the [v0.9.0-beta.1 release](https://github.com/ibbuilds/obsidian-x-feed-scraper/releases/tag/v0.9.0-beta.1).
+2. Download the [v0.9.1-beta.1 release](https://github.com/ibbuilds/obsidian-x-feed-scraper/releases/tag/v0.9.1-beta.1).
 3. Extract `main.js`, `manifest.json` and `styles.css` into `<vault>/.obsidian/plugins/x-feed-scraper/`. Keep this directory: the plugin ID is intentionally backward compatible.
 4. Enable **Bases** under Core plugins, then **Discovery Engine** under Community plugins.
 5. Click **Create research project** in the sidebar to use the guided setup (including an offline test), or supply an existing absolute **Research project manifest** in Settings for advanced use.

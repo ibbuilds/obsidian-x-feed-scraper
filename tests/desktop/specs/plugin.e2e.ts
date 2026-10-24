@@ -104,9 +104,9 @@ describe("X Feed Scraper in actual Obsidian Desktop",function(){
       return {running:instance.bridge.running,error:instance.bridge.lastError};
     });
     expect(activated.running).toBe(true);
-    const run=browser.$("//button[normalize-space()='Run research project']");
-    await run.waitForDisplayed({timeout:30000});
-    await run.click();
+    // The global Obsidian command must use /project/sync when a generic
+    // project is active; /sync is only for legacy RSS/fixture collection.
+    await browser.executeObsidianCommand("x-feed-scraper:sync-authorized-source");
     await browser.waitUntil(async()=>
       (await browser.$(".xfs-panel").getText()).includes("Independent research record"),{
       timeout:30000,timeoutMsg:"Generic project record missing from Obsidian"

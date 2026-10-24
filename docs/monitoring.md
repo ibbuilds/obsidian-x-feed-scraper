@@ -16,12 +16,12 @@ Discovery Engine now stores **immutable versions of source observations and stru
 Use a *copy* of the example so you do not modify tracked repository fixtures:
 
     cp -R examples/price-monitor /tmp/discovery-price-demo
-    npm run cli -- project sync --project /tmp/discovery-price-demo/project.json --db /tmp/discovery-price-demo/library.db
-    npm run cli -- project alerts --id price-monitor-demo --db /tmp/discovery-price-demo/library.db
+    node --experimental-strip-types apps/collector/cli.ts project sync --project /tmp/discovery-price-demo/project.json --db /tmp/discovery-price-demo/library.db
+    node --experimental-strip-types apps/collector/cli.ts project alerts --id price-monitor-demo --db /tmp/discovery-price-demo/library.db
     cp /tmp/discovery-price-demo/snapshot-updated.json /tmp/discovery-price-demo/snapshot.json
-    npm run cli -- project sync --project /tmp/discovery-price-demo/project.json --db /tmp/discovery-price-demo/library.db
-    npm run cli -- project changes --id price-monitor-demo --db /tmp/discovery-price-demo/library.db
-    npm run cli -- project alerts --id price-monitor-demo --db /tmp/discovery-price-demo/library.db
+    node --experimental-strip-types apps/collector/cli.ts project sync --project /tmp/discovery-price-demo/project.json --db /tmp/discovery-price-demo/library.db
+    node --experimental-strip-types apps/collector/cli.ts project changes --id price-monitor-demo --db /tmp/discovery-price-demo/library.db
+    node --experimental-strip-types apps/collector/cli.ts project alerts --id price-monitor-demo --db /tmp/discovery-price-demo/library.db
 
 The sample has two synthetic products. The second snapshot changes one price from USD 129.99 to USD 99.99. The engine records the numeric field change and the configured ≥10% price-decrease rule matches. Repeatedly collecting the unchanged file creates **no duplicate change events**. A change of currency suppresses the comparison rule, because numbers in different currencies are not directly comparable.
 
@@ -96,9 +96,9 @@ The guided Obsidian project wizard supports common alert types. An advanced JSON
 
 To inspect from the CLI:
 
-    npm run cli -- project changes --id price-monitor-demo --db /path/to/library.db
-    npm run cli -- project alerts --id price-monitor-demo --db /path/to/library.db
-    npm run cli -- project versions --id price-monitor-demo --key product:price-100 --db /path/to/library.db
+    node --experimental-strip-types apps/collector/cli.ts project changes --id price-monitor-demo --db /path/to/library.db
+    node --experimental-strip-types apps/collector/cli.ts project alerts --id price-monitor-demo --db /path/to/library.db
+    node --experimental-strip-types apps/collector/cli.ts project versions --id price-monitor-demo --key product:price-100 --db /path/to/library.db
 
 The authenticated loopback API also exposes GET `/project/changes`, `/project/alerts` and `/project/versions`. In Obsidian, expand **Monitoring** in the active project sidebar.
 

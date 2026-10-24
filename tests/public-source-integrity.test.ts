@@ -150,3 +150,16 @@ test("HTTPS redirects cannot request a destination resolving to a private addres
   assert.deepEqual(requests,["https://catalog.example/data"]);
   assert.deepEqual(lookups,["catalog.example","private.example"]);
 });
+
+test("public retrieval refuses all X and t.co variants before DNS or socket use",async t=>{
+  const {requests,lookups}=mockPublicHttp(t,{});
+  for(const url of [
+    "https://mobile.x.com/post","https://api.x.com./v2",
+    "https://community.twitter.com/status/2","https://twitter.com./status/3",
+    "https://t.co./short","https://sub.t.co/short"
+  ]){
+    await assert.rejects(fetchPublicText(url,jsonOptions),/Automated retrieval from X is not supported/);
+  }
+  assert.deepEqual(lookups,[],"Blocked X hosts must not be resolved");
+  assert.deepEqual(requests,[],"Blocked X hosts must not be requested");
+});

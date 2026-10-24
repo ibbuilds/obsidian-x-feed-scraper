@@ -1,6 +1,6 @@
 {
   "name": "discovery-engine",
-  "version": "0.9.0",
+  "version": "0.9.1",
   "private": true,
   "type": "module",
   "description": "Extensible local knowledge ingestion, research and curation engine",

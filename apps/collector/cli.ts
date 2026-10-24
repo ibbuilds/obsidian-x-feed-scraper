@@ -67,8 +67,12 @@ async function main():Promise<void>{
     const result=ingest(db,posts,profile,connector,refs());
     const analysis=option("auto-enrich")==="true"?await enrich(db,profile,refs(),10,false):null;
     show({result,analysis,export:vault?exportToVault(db,vault):null});
+    // Successful process exit must not hide a partially failed source run.
+    if(result.errors>0||(analysis?.failed||0)>0)process.exitCode=1;
   }else if(command==="enrich"){
-    show(await enrich(db,profile,refs(),Number(option("limit")||10)));
+    const analysis=await enrich(db,profile,refs(),Number(option("limit")||10));
+    show(analysis);
+    if(analysis.failed>0)process.exitCode=1;
     if(vault)show({export:exportToVault(db,vault)});
   }else if(command==="export"){
     if(!vault)throw new Error("--vault is required");

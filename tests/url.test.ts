@@ -1,6 +1,6 @@
 import {test} from "node:test";
 import assert from "node:assert/strict";
-import {extractUrls,isLocalOrUnsafeAddress,normalizeUrl,safeHostname} from "../packages/core/url.ts";
+import {extractUrls,isLocalOrUnsafeAddress,normalizeUrl,safeHostname,isXUrl} from "../packages/core/url.ts";
 import type {Post} from "../packages/core/types.ts";
 
 const post:Post={id:"1",url:"https://x.com/sample/status/1",author:"A",username:"a",text:""};
@@ -38,4 +38,16 @@ test("credential-like URL parameters cannot enter normalized sources",()=>{
     assert.throws(()=>normalizeUrl("https://example.org/resource?"+query),/credential-like/);
   }
   assert.equal(normalizeUrl("https://example.org/resource?utm_source=x&id=7"),"https://example.org/resource?id=7");
+});
+
+test("X hosts include subdomains and FQDN trailing dots but not lookalike domains",()=>{
+  for(const host of [
+    "x.com","www.x.com","mobile.x.com","api.x.com.","twitter.com",
+    "mobile.twitter.com","www.twitter.com."
+  ]){
+    assert.equal(isXUrl("https://"+host+"/path"),true,"Unrecognized X hostname: "+host);
+  }
+  for(const host of ["example.com","notx.com","x.com.evil.test","twitter.com.evil.test"]){
+    assert.equal(isXUrl("https://"+host+"/path"),false,"Lookalike incorrectly blocked: "+host);
+  }
 });
