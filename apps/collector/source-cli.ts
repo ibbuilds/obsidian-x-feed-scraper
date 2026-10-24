@@ -5,6 +5,7 @@
  */
 import {existsSync,mkdirSync,readFileSync,writeFileSync} from "node:fs";
 import {dirname,join,resolve} from "node:path";
+import {fileURLToPath} from "node:url";
 import {createDefaultRegistry} from "../../packages/core/extensions.ts";
 import {loadProject} from "../../packages/core/project-config.ts";
 import {runProject,reprocessProject} from "../../packages/core/engine.ts";
@@ -37,7 +38,6 @@ const HELP=[
   "Use --extension /absolute/path/trusted.cjs explicitly to load trusted code.",
   "No Obsidian installation, GUI, X session or network account is required."
 ].join("\n");
-const GENERAL=new Set(["db","config","id","extension"]);
 const COMMAND_FLAGS:Record<string,string[]>={
   init:["dir"],validate:["config","extension"],run:["config","db","extension","page-size","max-pages"],
   projects:["db","config"],query:["db","config","id","dataset","limit","offset","search","type","min-score"],
@@ -285,6 +285,6 @@ export async function main(argv:readonly string[]=process.argv.slice(2)):Promise
   const flags=argumentsToFlags(argv.slice(1),COMMAND_FLAGS[command]);
   await execute(command,flags);
 }
-if(import.meta.url===new URL("file://"+process.argv[1]).href){
+if(process.argv[1]&&resolve(fileURLToPath(import.meta.url))===resolve(process.argv[1])){
   main().catch(error=>{process.stderr.write("source-scraper: "+safeError(error)+"\n");process.exitCode=1;});
 }
