@@ -153,10 +153,10 @@ test("public product JSON-LD returns real product claims only when price and cur
      availability:"https://schema.org/InStock"}}),
    "https://example.org/products/42?utm_source=test");
  assert.equal(normalized.type,"product");
- assert.equal(normalized.attributes.price,129.9);
- assert.equal(normalized.attributes.currency,"USD");
- assert.equal(normalized.attributes.availability,"InStock");
- assert.equal(normalized.attributes.sku,"ITEM-42");
+ assert.equal(normalized.attributes!.price,129.9);
+ assert.equal(normalized.attributes!.currency,"USD");
+ assert.equal(normalized.attributes!.availability,"InStock");
+ assert.equal(normalized.attributes!.sku,"ITEM-42");
  assert.equal(normalized.url,"https://example.org/products/42");
  assert.throws(()=>parseProductPage(page({"@type":"Product",name:"Example",
    offers:[{"@type":"Offer",price:"10",priceCurrency:"USD"},
