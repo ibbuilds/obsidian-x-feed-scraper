@@ -26,7 +26,7 @@ const project=parseProject({id:"export-profile",name:"Synthetic JSON export prof
 const times={};
 function exportFile(name,compact){
   const filename=join(root,name+".json");
-  const args=[binary,"export","--config",config,"--out",filename,"--limit","100000"];
+  const args=[binary,"export","--config",config,"--db",db,"--out",filename,"--limit","100000"];
   if(compact)args.push("--compact","true");
   const start=performance.now();
   const result=spawnSync(process.execPath,args,{encoding:"utf8",timeout:60000,maxBuffer:300000});
