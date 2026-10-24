@@ -22,7 +22,7 @@ rl.on("line",line=>{
    reply(req.id,{tools:[{name:"unrelated-tool",inputSchema:{type:"object"}}],
      nextCursor:"second-page"});return;
   }
-  reply(req.id,{tools:["list_records","check_environment","tool_error","hang","invalid_data"]
+  reply(req.id,{tools:["list_records","check_environment","tool_error","hang","invalid_data","provider_records"]
     .map(name=>({name,inputSchema:{type:"object"}}))});
   return;
  }
@@ -34,6 +34,16 @@ rl.on("line",line=>{
  }
  if(name==="invalid_data"){
   reply(req.id,{structuredContent:{observations:[{id:"",type:"record"}],hasMore:false}});return;
+ }
+ if(name==="provider_records"){
+  reply(req.id,{structuredContent:{data:{
+   rows:[{recordId:112,headline:"Infrastructure incident",
+     details:"A useful security research observation",
+     link:"https://example.org/incidents/112",priority:4,
+     source:"trusted-internal-mcp"}],
+   paging:{more:false,cursor:"end-of-observations"}
+  }}});
+  return;
  }
  if(name==="check_environment"){
   reply(req.id,{structuredContent:{observations:[{
