@@ -1,0 +1,59 @@
+{
+  "id": "greenhouse-job-monitor",
+  "name": "Public Greenhouse job board monitor",
+  "sources": [
+    {
+      "id": "public-greenhouse-board",
+      "adapter": "public-json",
+      "config": {
+        "url": "https://boards-api.greenhouse.io/v1/boards/REPLACE_WITH_BOARD_TOKEN/jobs",
+        "mapping": {
+          "itemsPath": "jobs",
+          "idPath": "id",
+          "type": "job-listing",
+          "titlePath": "title",
+          "urlPath": "absolute_url",
+          "occurredAtPath": "updated_at",
+          "attributes": {
+            "location": "location.name",
+            "updatedAt": "updated_at"
+          }
+        }
+      }
+    }
+  ],
+  "pipeline": [
+    "observation-entity"
+  ],
+  "evaluator": "keyword",
+  "policy": {
+    "includeKeywords": [
+      "engineer",
+      "developer",
+      "design"
+    ],
+    "excludeKeywords": [],
+    "minimumScore": 0
+  },
+  "watch": {
+    "rules": [
+      {
+        "id": "new-opening",
+        "path": "$",
+        "operator": "created"
+      },
+      {
+        "id": "listing-updated",
+        "path": "/attributes/updatedAt",
+        "operator": "changed"
+      }
+    ]
+  },
+  "outputs": [
+    {
+      "id": "json",
+      "adapter": "json",
+      "config": {}
+    }
+  ]
+}

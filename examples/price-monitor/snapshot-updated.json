@@ -1,0 +1,26 @@
+[
+  {
+    "id": "price-100",
+    "type": "product",
+    "title": "Noise-cancelling headphones",
+    "url": "https://example.org/products/headphones",
+    "attributes": {
+      "price": 99.99,
+      "currency": "USD",
+      "availability": "InStock",
+      "seller": "Demo Store"
+    }
+  },
+  {
+    "id": "price-101",
+    "type": "product",
+    "title": "Mechanical keyboard",
+    "url": "https://example.org/products/keyboard",
+    "attributes": {
+      "price": 89.99,
+      "currency": "USD",
+      "availability": "InStock",
+      "seller": "Demo Store"
+    }
+  }
+]

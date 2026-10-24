@@ -1,0 +1,64 @@
+{
+  "id": "job-radar-demo",
+  "name": "Job radar: synthetic listings",
+  "sources": [
+    {
+      "id": "company-careers",
+      "adapter": "json-snapshot",
+      "config": {
+        "path": "snapshot.json"
+      }
+    }
+  ],
+  "pipeline": [
+    "observation-entity"
+  ],
+  "evaluator": "keyword",
+  "policy": {
+    "includeKeywords": [
+      "engineer",
+      "analyst",
+      "remote"
+    ],
+    "excludeKeywords": [],
+    "minimumScore": 0
+  },
+  "watch": {
+    "rules": [
+      {
+        "id": "new-job",
+        "path": "$",
+        "operator": "created"
+      },
+      {
+        "id": "listing-closed",
+        "path": "/attributes/status",
+        "operator": "equals",
+        "value": "closed"
+      },
+      {
+        "id": "location-changed",
+        "path": "/attributes/location",
+        "operator": "changed"
+      }
+    ]
+  },
+  "entitySchemas": {
+    "job-listing": {
+      "fields": {
+        "company": "string",
+        "location": "string",
+        "status": "string",
+        "salaryMin": "number",
+        "salaryMax": "number"
+      }
+    }
+  },
+  "outputs": [
+    {
+      "id": "json",
+      "adapter": "json",
+      "config": {}
+    }
+  ]
+}

@@ -1,0 +1,49 @@
+{
+  "id": "public-product-watch",
+  "name": "Public structured-data product price monitor",
+  "sources": [
+    {
+      "id": "allowed-products",
+      "adapter": "public-product",
+      "config": {
+        "urls": [
+          "https://www.example.com/REPLACE_WITH_A_PUBLIC_PRODUCT_PAGE"
+        ]
+      }
+    }
+  ],
+  "pipeline": [
+    "observation-entity"
+  ],
+  "evaluator": "keyword",
+  "policy": {
+    "includeKeywords": [],
+    "excludeKeywords": [],
+    "minimumScore": 0
+  },
+  "watch": {
+    "rules": [
+      {
+        "id": "new-product",
+        "path": "$",
+        "operator": "created"
+      },
+      {
+        "id": "price-down-ten",
+        "path": "/attributes/price",
+        "operator": "decrease-percent",
+        "threshold": 10,
+        "requireUnchanged": [
+          "/attributes/currency"
+        ]
+      }
+    ]
+  },
+  "outputs": [
+    {
+      "id": "json",
+      "adapter": "json",
+      "config": {}
+    }
+  ]
+}
