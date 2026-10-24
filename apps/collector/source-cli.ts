@@ -289,7 +289,7 @@ async function execute(command:string,flags:Flags):Promise<void>{
       const compact=flags.get("compact")===undefined?false:
         ["true","false"].includes(flags.get("compact")!)?flags.get("compact")==="true":
         (()=>{throw new Error("--compact must be true or false");})();
-      const count=await streamExport(store,id,dataset,flags,limit,offset,compact,format);
+      const count=await streamExport(store,id,dataset,flags,limit,offset,compact,format as "json"|"ndjson");
       if(flags.get("out")){
         output({schemaVersion:DATA_VERSION,command,dataset,projectId:id,
           format,path:resolve(required(flags,"out")),count});
