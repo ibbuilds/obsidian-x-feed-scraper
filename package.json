@@ -19,7 +19,10 @@
     "check": "tsc --noEmit",
     "smoke": "node scripts/ci-smoke.mjs",
     "legacy:cli": "node --experimental-strip-types apps/collector/cli.ts",
-    "legacy:serve": "node --experimental-strip-types apps/collector/cli.ts serve"
+    "legacy:serve": "node --experimental-strip-types apps/collector/cli.ts serve",
+    "sync": "node --experimental-strip-types apps/collector/cli.ts sync",
+    "cli": "node --experimental-strip-types apps/collector/cli.ts",
+    "serve": "node --experimental-strip-types apps/collector/cli.ts serve"
   },
   "dependencies": {
     "fast-xml-parser": "^5.2.5"
