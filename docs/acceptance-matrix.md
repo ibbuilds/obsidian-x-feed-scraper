@@ -1,4 +1,4 @@
-# Discovery Engine 0.5.0 acceptance and release boundaries
+# Discovery Engine 0.6.0 acceptance and release boundaries
 
 CI verification refers to the automated GitHub Actions tests, not the user's personal Obsidian vault or X account. Feature status must not be inferred from installability alone.
 
