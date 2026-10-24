@@ -1,4 +1,4 @@
-import type {JsonRecord,JsonValue} from "../sdk/contracts.ts";
+import type {JsonRecord,JsonValue,ChangeRule} from "../sdk/contracts.ts";
 
 export type ChangeKind="created"|"added"|"removed"|"updated";
 export interface EntitySnapshot {
@@ -12,15 +12,6 @@ export interface FieldChange {
   kind:ChangeKind;
   before:JsonValue|undefined;
   after:JsonValue|undefined;
-}
-export interface ChangeRule {
-  id:string;
-  path:string;
-  operator:"created"|"changed"|"equals"|"decrease-percent"|"increase-percent";
-  threshold?:number;
-  value?:JsonValue;
-  /** Optional other JSON pointers that must remain equal, e.g. price currency. */
-  requireUnchanged?:string[];
 }
 export interface ChangeEvent extends FieldChange {
   id:number;
@@ -80,7 +71,7 @@ export function snapshot(value:{type:string;title:string;url?:string;attributes?
 }
 /** Canonical deep comparison; array changes are atomic, never position-based guesses. */
 export function diffSnapshots(before:EntitySnapshot|undefined,after:EntitySnapshot):FieldChange[]{
-  if(!before)return [{path:"$",kind:"created",before:undefined,after}];
+  if(!before)return [{path:"$",kind:"created",before:undefined,after:after as unknown as JsonValue}];
   const result:FieldChange[]=[];
   const walk=(prior:JsonValue|undefined,next:JsonValue|undefined,path:string,depth:number):void=>{
     if(sameJson(prior,next))return;
