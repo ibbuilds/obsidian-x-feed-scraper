@@ -678,6 +678,12 @@ export default class ScraperPlugin extends Plugin {
     this.settings.extensionPath="";
     await this.saveSettings();
     await this.restart();
+    // Configured schedules collect immediately on startup; avoid racing a second
+    // manual /project/sync against that first asynchronous collection.
+    if(options.intervalMinutes>0){
+      await this.redraw();
+      return;
+    }
     const reply=await this.call("/project/sync","POST") as {
       result?:{success?:boolean;runs?:Array<{error?:string}>}
     };
