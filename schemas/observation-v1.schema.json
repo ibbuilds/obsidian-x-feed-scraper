@@ -48,7 +48,8 @@
     },
     "occurredAt": {
       "type": "string",
-      "format": "date-time"
+      "maxLength": 100,
+      "description": "A timestamp parseable by Node Date.parse, preserved without fabricating an ISO representation"
     },
     "attributes": {
       "type": "object"
