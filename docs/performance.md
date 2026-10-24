@@ -1,4 +1,4 @@
-# Offline performance profiling — Source Scraper v0.11 to v0.12
+# Offline performance profiling — Source Scraper v0.11 to v0.13
 
 This release was profiled with deterministic synthetic workloads on GitHub Actions. Results are not universal performance guarantees: hardware, database size, source latency, and number of revisions change real-world performance.
 
@@ -16,6 +16,33 @@ node --experimental-strip-types scripts/bench-reprocess.mjs 2400
 Both scripts generate temporary local JSON/SQLite fixtures and delete them after profiling. They make **no network requests**, run no third-party extensions, and do not touch personal Obsidian vaults.
 
 The current [performance workflow](../.github/workflows/performance.yml) compares the immutable v0.11.0 commit `894bcf1577d07911f2d000e1464efcecdd324588` with the candidate in two checkouts on the **same Linux runner**. It runs the same synthetic SQL, source paging, unchanged-record replay and offline-reassessment workloads on both revisions, then uploads raw JSON measurements. It checks for meaningful repeat/reassessment speedups and guards against large regressions in existing indexed reads and first ingestion. Measurements can fluctuate under runner load; no one-run result is a universal guarantee. The historic v0.11 profile below compared to the immutable v0.10.0 commit.
+
+## v0.13 compared with v0.12
+
+The current [same-runner comparison](https://github.com/ibbuilds/source-scraper/actions/runs/40090326967) benchmarks the tested v0.12 commit `939c7c7314db15b709d5c0713571b3a35e82ef37` against the v0.13 candidate.
+
+| CPU-bound operation | v0.12 | v0.13 candidate | Gain |
+| --- | ---: | ---: | ---: |
+| 16,000 equal nested JSON comparisons | 4,932.23 ms | 367.54 ms | 13.4× |
+| 16,000 different nested JSON comparisons | 4,936.16 ms | 372.46 ms | 13.3× |
+| 16,000 nested change detections | 14,829.16 ms | 1,273.77 ms | 11.6× |
+| 65,000 evaluations with 60 keywords | 730.25 ms | 511.79 ms | 1.43× |
+| Offline reprocess of 2,400 entities | 143.62 ms | 141.12 ms | Comparable |
+
+The equality comparator uses direct structural traversal instead of sorting
+keys and serializing complete subtrees. The test oracle compares the result
+to the prior canonical implementation for 1,000 deterministic JSON objects
+and checks escaped pointers, array order, missing values, and watch guards.
+The keyword cache is scoped to the run and checks each source-array element,
+so in-place policy edits are still recognized and invalid inputs still fail.
+
+Offline reprocessing now iterates SQLite entities instead of materializing
+the complete entity table before evaluation. This bounds the transient entity
+list without changing saved revisions or human decisions; the table above
+does **not** claim a measured memory reduction in MiB.
+
+As before, these are synthetic CPU workloads, not benchmarks of remote
+provider latency, network reliability, real license accuracy or X access.
 
 ## v0.12 compared with v0.11
 
