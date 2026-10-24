@@ -1,4 +1,4 @@
-# Offline performance profiling — Source Scraper v0.11
+# Offline performance profiling — Source Scraper v0.11 to v0.12
 
 This release was profiled with deterministic synthetic workloads on GitHub Actions. Results are not universal performance guarantees: hardware, database size, source latency, and number of revisions change real-world performance.
 
@@ -9,11 +9,31 @@ Requires Node.js >=22.16.0 and `npm ci` on a source checkout.
 ```sh
 node --experimental-strip-types scripts/bench-engine.mjs 1200 12000
 node --experimental-strip-types scripts/bench-pagination.mjs 6000 50
+node --experimental-strip-types scripts/bench-repeat.mjs 1800
+node --experimental-strip-types scripts/bench-reprocess.mjs 2400
 ```
 
 Both scripts generate temporary local JSON/SQLite fixtures and delete them after profiling. They make **no network requests**, run no third-party extensions, and do not touch personal Obsidian vaults.
 
-The [CI performance workflow](../.github/workflows/performance.yml) compares the immutable v0.10.0 commit `1bc4759ec514b74d974d318af35f7b27bb2dd6b9` and the candidate using two separate source checkouts and the **same runner**. The old source receives only the identical benchmark script. Results are uploaded as JSON artifacts. The workflow checks query-plan use of the new review index and requires measured speedups for entity listing, evidence lookups, append-only JSON pagination and snapshot pagination.
+The current [performance workflow](../.github/workflows/performance.yml) compares the immutable v0.11.0 commit `894bcf1577d07911f2d000e1464efcecdd324588` with the candidate in two checkouts on the **same Linux runner**. It runs the same synthetic SQL, source paging, unchanged-record replay and offline-reassessment workloads on both revisions, then uploads raw JSON measurements. It checks for meaningful repeat/reassessment speedups and guards against large regressions in existing indexed reads and first ingestion. Measurements can fluctuate under runner load; no one-run result is a universal guarantee. The historic v0.11 profile below compared to the immutable v0.10.0 commit.
+
+## v0.12 compared with v0.11
+
+[Measured PR comparison](https://github.com/ibbuilds/source-scraper/actions/runs/40087354367) on an isolated Linux runner with Node.js 22.16.0, SQLite and synthetic local JSON; no network/MCP calls:
+
+| Operation | v0.11 | v0.12 candidate | Gain |
+| --- | ---: | ---: | ---: |
+| Ingest 1,800 initial records | 276.14 ms | 280.72 ms | Comparable (+1.7% cost) |
+| Revisit 1,800 unchanged records | 242.90 ms | 123.30 ms | 1.97× faster |
+| Revisit 1,800 records, one changed | 226.24 ms | 99.50 ms | 2.27× faster |
+| Reevaluate 2,400 retained records | 1,000.74 ms | 170.69 ms | 5.86× faster |
+| Reevaluate the same 2,400 records again | 972.46 ms | 155.46 ms | 6.26× faster |
+
+The source adapter and evaluators still run on unchanged data: the optimization skips database writes **only if the full observation, retained evidence/drafts, evaluator identity and current assessment all match, and the latest immutable observation revision exists with the same hash**. `last_seen`, cursors and duplicate counters still advance. Explicit human decisions are never inferred or changed. Legacy unnamespaced identity checks continue through the full path.
+
+Offline reevaluation reuses its source lookup and evaluator, commits 100 entities per SQLite transaction, and checks cancellation before each commit. A failed evaluator leaves earlier complete groups committed but does not apply an incomplete group. This preserves crash-safe partial progress with coarser (100-entity) checkpoints than v0.11.
+
+**Discarded experiment:** grouping provenance lookups for full JSON exports provided only about 7.5% improvement on a 3,000-entity test and sometimes worsened 1,400-entity exports. The original output implementation was restored, not shipped as an unproven optimization.
 
 ## Recorded comparison
 
