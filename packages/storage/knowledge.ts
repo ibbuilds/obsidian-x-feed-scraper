@@ -464,7 +464,7 @@ export class KnowledgeStore extends Store {
       "FROM kb_mentions m JOIN kb_observations o ON "+
       "o.project_id=m.project_id AND o.connection_id=m.connection_id AND o.item_id=m.item_id "+
       "WHERE m.project_id=? AND m.entity_key=? "+
-      "ORDER BY o.last_seen DESC LIMIT 50"
+      "ORDER BY o.last_seen DESC,m.connection_id,m.item_id LIMIT 50"
     ).all(projectId,key) as Row[]).map(row=>{
       const original=json<Observation|undefined>(row.observation_json,undefined);
       return {connectionId:row.connection_id,itemId:row.item_id,type:row.type,
@@ -513,7 +513,7 @@ export class KnowledgeStore extends Store {
       "evidence_json,observation_json,active,first_seen,last_seen FROM ("+
         "SELECT m.entity_key,m.connection_id,m.item_id,o.type,o.title,o.url,o.occurred_at,"+
         "m.evidence_json,m.observation_json,m.active,o.first_seen,o.last_seen,"+
-        "ROW_NUMBER() OVER (PARTITION BY m.entity_key ORDER BY o.last_seen DESC) rank "+
+        "ROW_NUMBER() OVER (PARTITION BY m.entity_key ORDER BY o.last_seen DESC,m.connection_id,m.item_id) rank "+
         "FROM kb_mentions m JOIN kb_observations o ON "+
         "o.project_id=m.project_id AND o.connection_id=m.connection_id AND o.item_id=m.item_id "+
         "WHERE m.project_id=? AND m.entity_key IN (SELECT value FROM json_each(?))"+
