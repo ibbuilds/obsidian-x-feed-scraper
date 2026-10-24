@@ -180,7 +180,8 @@ describe("X Feed Scraper in actual Obsidian Desktop",function(){
       },{timeout:30000,timeoutMsg:"Offline example was not processed from the first-run wizard"});
     }catch(error){
       const content=await browser.$(".xfs-panel").getText();
-      const notices=await browser.$(".notice").map(async x=>x.getText());
+      const notice=await browser.$(".notice").getText().catch(()=>"No notice visible");
+      const modalInfo=await browser.$(".modal-container").getText().catch(()=>"No modal visible");
       const state=await browser.executeObsidian(async({app})=>{
         const instance=(app as unknown as {plugins:{plugins:Record<string,{
           settings:{projectManifestPath:string};
@@ -190,7 +191,7 @@ describe("X Feed Scraper in actual Obsidian Desktop",function(){
           running:instance?.bridge.running,error:instance?.bridge.lastError};
       });
       throw new Error("Offline demo did not appear. Panel: "+content.slice(0,1800)+
-        ". Modal: "+modalInfo.slice(0,800)+". Notices: "+JSON.stringify(notices)+
+        ". Modal: "+modalInfo.slice(0,800)+". Notices: "+JSON.stringify(notice)+". Modal: "+modalInfo.slice(0,900)+
         ". State: "+JSON.stringify(state)+". "+String(error));
     }
     const evidence=browser.$("//summary[normalize-space()='Sources, evidence and review history']");
