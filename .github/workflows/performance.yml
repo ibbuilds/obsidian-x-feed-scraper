@@ -28,13 +28,15 @@ jobs:
       - run: npm ci --prefix baseline --no-audit --no-fund
       - name: Profile baseline on a clean SQLite database
         run: |
-          cp candidate/scripts/bench-engine.mjs baseline/scripts/bench-engine.mjs
+          cp candidate/scripts/bench-engine.mjs candidate/scripts/bench-pagination.mjs baseline/scripts/
           cd baseline
           node --experimental-strip-types scripts/bench-engine.mjs 1200 12000 > ../baseline-profile.json
+          node --experimental-strip-types scripts/bench-pagination.mjs 6000 50 > ../baseline-pagination.json
       - name: Profile candidate with identical synthetic data
         run: |
           cd candidate
           node --experimental-strip-types scripts/bench-engine.mjs 1200 12000 > ../candidate-profile.json
+          node --experimental-strip-types scripts/bench-pagination.mjs 6000 50 > ../candidate-pagination.json
       - name: Compare critical hot paths without source or network dependencies
         run: |
           node --input-type=module - <<'NODE'
@@ -56,6 +58,14 @@ jobs:
               throw new Error('Insufficient speedup in indexed hot path: '+key);
             }
           }
+          const oldPages=JSON.parse(readFileSync('baseline-pagination.json','utf8'));
+          const newPages=JSON.parse(readFileSync('candidate-pagination.json','utf8'));
+          for(const key of ['jsonFileMs','jsonSnapshotMs']){
+            const before=oldPages.phases[key],after=newPages.phases[key];
+            console.log(key+': baseline '+before+' ms, candidate '+after+
+              ' ms; ratio '+(after/Math.max(before,0.01)).toFixed(3));
+            if(after>=before*0.85)throw new Error('Insufficient pagination speedup: '+key);
+          }
           NODE
       - uses: actions/upload-artifact@v4
         if: always()
@@ -64,4 +74,6 @@ jobs:
           path: |
             baseline-profile.json
             candidate-profile.json
+            baseline-pagination.json
+            candidate-pagination.json
           retention-days: 30
