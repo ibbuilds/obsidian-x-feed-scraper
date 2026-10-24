@@ -197,3 +197,32 @@ test("project CLI runs without Obsidian and persists a queryable library",()=>{
   assert.ok((JSON.parse(second.stdout) as unknown[]).length>=4);
  }finally{rmSync(root,{recursive:true,force:true});}
 });
+
+test("changing a connector source behind an existing checkpoint is forbidden",async()=>{
+ const root=mkdtempSync(join(tmpdir(),"discovery-source-identity-")),db=join(root,"db.sqlite");
+ try{
+  const registry=createDefaultRegistry(),project=demo("frontend");
+  const first=await runProject(db,project,registry);
+  assert.equal(first.success,true);
+  const changed=demo("frontend");
+  changed.sources[0].config.path=resolve("examples/security/project.json");
+  await assert.rejects(runProject(db,changed,registry),
+    /changed source configuration/);
+  const existing=new KnowledgeStore(db);
+  assert.equal(existing.listEntities(project.id).length>=1,true);
+  existing.close();
+ }finally{rmSync(root,{recursive:true,force:true});}
+});
+test("opt-in public metadata processor does not retrieve unsafe local network URLs",async()=>{
+ const registry=createDefaultRegistry(),project=demo("frontend");
+ const source=project.sources[0];
+ const processor=registry.processors.get("public-metadata")!;
+ const signal=new AbortController().signal;
+ const result=await processor.run({project,source,signal},
+   {id:"unsafe",type:"community-post",text:"Local destination"},
+   [{key:"http://127.0.0.1/admin",type:"web-resource",title:"Internal service",
+     url:"http://127.0.0.1/admin"}]);
+ assert.equal(result.length,1);
+ assert.equal(result[0].url,"http://127.0.0.1/admin");
+ assert.ok(result[0].evidence?.some(entry=>entry.signal==="metadata-unavailable"));
+});
