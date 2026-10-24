@@ -2,6 +2,8 @@
 
 **Discovery Engine can consume observations from an explicitly trusted local MCP server without requiring the author to fork or modify the engine.** This is a source adapter, not autonomous permission to access private third-party accounts.
 
+A server connected to ChatGPT or another cloud client is **not automatically installed on the Obsidian device**. You must have the corresponding authorized MCP executable available locally.
+
 The built-in `mcp-stdio` adapter supports standard local MCP **stdio**, with automatic detection of the 2026-07-28 stateless discovery protocol and fallback to 2025-era `initialize`. It does **not** currently implement Streamable HTTP or remote MCP OAuth. Prefer a separate adapter if your integration requires those.
 
 ## 1. Choose the MCP tool to poll
