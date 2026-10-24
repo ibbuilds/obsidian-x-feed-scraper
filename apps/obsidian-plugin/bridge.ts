@@ -14,6 +14,7 @@ export interface BridgeConfig {
   threshold:number;
   confidence:number;
   preferFree:boolean;
+  autoEnrich:boolean;
 }
 export class LocalBridge {
   private child?:ChildProcessWithoutNullStreams;
@@ -41,7 +42,8 @@ export class LocalBridge {
       "--vault",config.vaultPath,"--interval",String(config.scheduleMinutes),
       "--threshold",String(config.threshold),
       "--confidence",String(config.confidence),
-      "--prefer-free",String(config.preferFree)
+      "--prefer-free",String(config.preferFree),
+      "--auto-enrich",String(config.autoEnrich)
     ];
     if(config.feedUrl)args.push("--feed",config.feedUrl);
     if(config.fixturePath)args.push("--fixture",config.fixturePath);
