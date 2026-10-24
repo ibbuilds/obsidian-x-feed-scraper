@@ -3,6 +3,7 @@ import {existsSync, readFileSync} from "node:fs";
 import {join} from "node:path";
 import {ensureVaultPath} from "./vault-safe.ts";
 import {retireManagedNote,writeManagedNote,type ManagedResult} from "./managed-notes.ts";
+import {acquireLock} from "./lock.ts";
 import {Store} from "../storage/store.ts";
 import type {Source} from "./types.ts";
 import {importReferences} from "./pipeline.ts";
@@ -96,7 +97,11 @@ export function exportToVault(dbPath:string,vaultPath:string):
   }
   const referencesFile=join(root,"References.md");
   const library=existsSync(referencesFile)?importReferences(readFileSync(referencesFile,"utf8")):new Set<string>();
-  const store=new Store(dbPath);
+  // Share the durable lock with ingestion/enrichment to prevent parallel vault exports.
+  const release=acquireLock(dbPath+".lock");
+  let store:Store;
+  try{store=new Store(dbPath);}
+  catch(error){release();throw error;}
   const result={created:0,unchanged:0,updated:0,removed:0,conflicts:0,skipped:0,conflictPaths:[] as string[]};
   const conflict=(relative:string):void=>{
     result.conflicts++;
@@ -191,5 +196,5 @@ export function exportToVault(dbPath:string,vaultPath:string):
     const baseRelative=join("X Feed Scraper","Sources.base");
     countWrite(writeManagedNote(store,root,baseRelative,BASE),baseRelative);
     return result;
-  } finally {store.close();}
+  } finally {try{store.close();}finally{release();}}
 }
