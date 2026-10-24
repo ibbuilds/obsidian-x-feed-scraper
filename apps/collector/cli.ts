@@ -88,7 +88,8 @@ async function main():Promise<void>{
     const store=new Store(db);
     try{
       if(command==="status")show(store.stats());
-      else if(command==="sources")show(store.listSources(option("status"),option("search"),Number(option("limit")||100)));
+      else if(command==="sources")show(store.listSources(option("status"),option("search"),Number(option("limit")||100),
+        Number(option("offset")||0)));
       else if(command==="posts")show(store.listPosts());
       else if(command==="history")show(store.history());
       else if(command==="recommendations")show(store.recommendations());
