@@ -177,6 +177,12 @@ describe("X Feed Scraper in actual Obsidian Desktop",function(){
       const content=await browser.$(".xfs-panel").getText();
       return content.includes("motion kit")&&content.includes("Knowledge projects");
     },{timeout:45000,timeoutMsg:"Offline example was not processed from the first-run wizard"});
+    const evidence=browser.$("//summary[normalize-space()='Sources, evidence and review history']");
+    await evidence.waitForDisplayed({timeout:15000});
+    await evidence.click();
+    await browser.waitUntil(async()=>
+      (await browser.$(".xfs-panel").getText()).includes("Original observations (2)"),
+      {timeout:15000,timeoutMsg:"Generated example has no explainable provenance"});
     const verify=await browser.executeObsidian(async({app,obsidian})=>{
       const plugin=(app as unknown as {plugins:{plugins:Record<string,{
         settings:{projectManifestPath:string}
