@@ -1,4 +1,4 @@
-# Discovery Engine 0.9.0 acceptance and release boundaries
+# Source Scraper 0.10.0 acceptance and release boundaries
 
 CI verification refers to the automated GitHub Actions tests, not the user's personal Obsidian vault or X account. Feature status must not be inferred from installability alone.
 
@@ -19,10 +19,10 @@ CI verification refers to the automated GitHub Actions tests, not the user's per
 | Relationship/provenance storage | Implemented and tested | SQLite `kb_mentions` and observation count, evidence JSON |
 | Optional public metadata research | Implemented; explicitly opt-in | DNS-pinned public HTTP, blocks private destinations and X, per-run limit |
 | Non-URL resources | Implemented and tested | Security advisory, ticket and research record entity examples |
-| JSON and guarded Obsidian outputs | Implemented and tested | Markdown/Bases notes, SHA-256 ownership ledger, no modification of manual notes |
+| JSON output and optional Obsidian integration | Implemented and tested separately | Core registry excludes Obsidian by default; JSON/NDJSON versioned exports need no vault; optional registry and plugin preserve protected Markdown/Bases notes |
 | Obsidian Desktop project UI | Implemented and tested in isolated Linux desktop | Guided no-code project creation, offline demo, saved-project switching, provenance and review history; owner-device smoke test pending |
 | Guided project setup and offline sample | Tested in real Obsidian Desktop | RSS/JSON/MCP/demo setup, bundled offline sample completes without external services or touching References.md |
-| CLI without Obsidian | Implemented and tested | project sync, list, entities, review, reprocess and export |
+| Standalone JSON-first CLI | Implemented and tested | One-file Node executable; init, validate, run, projects, query, inspect, review, reprocess, JSON/NDJSON export; offline starter and portable single-file runtime checks on Linux/macOS/Windows |
 | Additive migration of v0.4.0 | Implemented and tested | Original posts, sources, relations, reviews and References.md retained |
 | Immutable revisions and field change log | Implemented and tested | Repeated identical snapshots produce no duplicates; changed fields record old/new values and source identity |
 | Configurable change watches | Implemented and tested | New records, changed values, percent drop/rise, equality; unchanged-currency guard |
