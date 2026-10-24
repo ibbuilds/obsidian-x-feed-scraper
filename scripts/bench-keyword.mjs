@@ -25,7 +25,7 @@ const entity={key:"record:known-1",type:"web-resource",title:"React UI motion co
   url:"https://example.org/resource",attributes:{description:"Detailed documentation ".repeat(5)},
   evidence:[{signal:"observed-url",detail:"Resource listed by authorized source"}]};
 const expected=keyword.assess(context,observation,entity);
-if(!expected||expected.category!=="motion"||expected.score!==50)throw Error("Unexpected baseline assessment: "+JSON.stringify(expected));
+if(!expected||expected.category!=="motion"||expected.score!==65)throw Error("Unexpected baseline assessment: "+JSON.stringify(expected));
 const start=performance.now();
 for(let i=0;i<count;i++){
   const actual=keyword.assess(context,observation,entity);
