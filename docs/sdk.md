@@ -8,7 +8,7 @@ For a working external implementation, read `examples/extensions/tickets.cjs`.
 
 Explicitly load only trusted local CommonJS modules:
 
-    node --experimental-strip-types apps/collector/cli.ts project sync --project examples/tickets/project.json --db ./data/demo.db --extension examples/extensions/tickets.cjs
+    node dist/source-scraper.mjs run --config examples/tickets/project.json --db ./data/demo.db --extension examples/extensions/tickets.cjs
 
 An extension exports:
 
