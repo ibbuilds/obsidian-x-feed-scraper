@@ -3,6 +3,7 @@ import {isAbsolute} from "node:path";
 import {StringDecoder} from "node:string_decoder";
 import type {JsonRecord,ObservationPage,SourceAdapter} from "../sdk/contracts.ts";
 import {validateObservation,jsonRecord} from "../core/project-config.ts";
+import {mapMcpToolResult,parseMcpMapping,type McpResultMapping} from "./mcp-mapping.ts";
 
 type ObjectValue=Record<string,unknown>;
 function record(x:unknown):ObjectValue {
@@ -23,7 +24,7 @@ function configStringArray(x:unknown,label:string,max=30):string[]{
 function options(source:JsonRecord):{
   command:string;args:string[];cwd?:string;tool:string;arguments:JsonRecord;
   cursorArgument:string;limitArgument:string;timeoutMs:number;passEnv:string[];
-  protocol:"auto"|"legacy"|"modern";
+  protocol:"auto"|"legacy"|"modern";mapping?:McpResultMapping;
 }{
   const raw=record(source);
   const requested=checkedString(raw.command,"command",1000);
@@ -60,7 +61,8 @@ function options(source:JsonRecord):{
     throw new Error("MCP cursor and limit arguments are reserved");
   }
   return {command,args,cwd,tool,arguments:argumentsValue,cursorArgument,
-    limitArgument,timeoutMs,passEnv,protocol:protocol as "auto"|"legacy"|"modern"};
+    limitArgument,timeoutMs,passEnv,protocol:protocol as "auto"|"legacy"|"modern",
+    mapping:parseMcpMapping(raw.mapping)};
 }
 /**
  * A small stdio client with 2026 discovery and 2025 initialization fallback. The child is
@@ -177,7 +179,7 @@ class StdioPeer {
     this.pending.clear();
   }
 }
-function parseToolResponse(raw:unknown,limit:number):ObservationPage{
+function parseToolResponse(raw:unknown,limit:number,mapping?:McpResultMapping):ObservationPage{
   const result=record(raw);
   if(result.isError===true)throw new Error("MCP source tool returned isError=true");
   let contents:unknown=result.structuredContent;
@@ -189,7 +191,7 @@ function parseToolResponse(raw:unknown,limit:number):ObservationPage{
     const str=checkedString(text.text,"JSON text",2_000_000);
     try{contents=JSON.parse(str);}catch{throw new Error("MCP tool returned invalid JSON text");}
   }
-  const data=record(contents);
+  const data=mapping?mapMcpToolResult(contents,mapping):record(contents);
   if(!Array.isArray(data.observations)||data.observations.length>limit)throw new Error(
     "MCP source response requires an observations array within the requested page limit");
   if(typeof data.hasMore!=="boolean")throw new Error("MCP source must report hasMore");
@@ -264,7 +266,7 @@ export const mcpStdioSource:SourceAdapter={
       const args:ObjectValue={...config.arguments,[config.limitArgument]:limit};
       if(cursor!==undefined)args[config.cursorArgument]=cursor;
       const response=await request("tools/call",{name:config.tool,arguments:args});
-      return parseToolResponse(response,limit);
+      return parseToolResponse(response,limit,config.mapping);
     }finally{peer.close();}
   }
 };
