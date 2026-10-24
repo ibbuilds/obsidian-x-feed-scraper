@@ -88,7 +88,7 @@ const BASE = [
   ""
 ].join("\n");
 export function exportToVault(dbPath:string,vaultPath:string):
-  {created:number;unchanged:number;updated:number;removed:number;conflicts:number;skipped:number} {
+  {created:number;unchanged:number;updated:number;removed:number;conflicts:number;skipped:number;conflictPaths:string[]} {
   const root=ensureVaultPath(vaultPath,[]);
   const folder=ensureVaultPath(root,["X Feed Scraper"]);
   for(const child of ["Candidates","Approved","Reports","Visuals"]){
@@ -97,17 +97,21 @@ export function exportToVault(dbPath:string,vaultPath:string):
   const referencesFile=join(root,"References.md");
   const library=existsSync(referencesFile)?importReferences(readFileSync(referencesFile,"utf8")):new Set<string>();
   const store=new Store(dbPath);
-  const result={created:0,unchanged:0,updated:0,removed:0,conflicts:0,skipped:0};
-  const countWrite=(value:ManagedResult):void=>{
+  const result={created:0,unchanged:0,updated:0,removed:0,conflicts:0,skipped:0,conflictPaths:[] as string[]};
+  const conflict=(relative:string):void=>{
+    result.conflicts++;
+    if(result.conflictPaths.length<100)result.conflictPaths.push(relative);
+  };
+  const countWrite=(value:ManagedResult,relative:string):void=>{
     if(value==="created")result.created++;
     else if(value==="unchanged")result.unchanged++;
     else if(value==="updated")result.updated++;
-    else result.conflicts++;
+    else conflict(relative);
   };
   const retire=(relative:string):void=>{
     const decision=retireManagedNote(store,root,relative);
     if(decision==="removed")result.removed++;
-    else if(decision==="conflict")result.conflicts++;
+    else if(decision==="conflict")conflict(relative);
   };
   try {
     for(let offset=0;;offset+=200){
@@ -127,7 +131,7 @@ export function exportToVault(dbPath:string,vaultPath:string):
       }
       const relative=source.status==="approved"?approvedPath:candidatePath;
       const value=writeManagedNote(store,root,relative,renderSource(source));
-      countWrite(value);
+      countWrite(value,relative);
       // Approval transitions do not leave stale generated candidate notes.
       if(source.status==="approved"&&value!=="conflict")retire(candidatePath);
     }
@@ -159,7 +163,8 @@ export function exportToVault(dbPath:string,vaultPath:string):
         ...media.map(link=>"- [Open image](<"+link.replace(/[<>]/g,"")+">)"),
         "","No source project URL was observed. Do not infer one.",""
       ].join("\n");
-      countWrite(writeManagedNote(store,root,join("X Feed Scraper","Visuals",id+".md"),text));
+      const relative=join("X Feed Scraper","Visuals",id+".md");
+      countWrite(writeManagedNote(store,root,relative,text),relative);
     }
     const stats=store.stats();
     const lastRun=stats.lastRun as {id?:string;started_at?:string;status?:string}|null;
@@ -180,9 +185,11 @@ export function exportToVault(dbPath:string,vaultPath:string):
         "",
         "Scores are heuristic; the personalized X feed has not been accessed.",""
       ].join("\n");
-      countWrite(writeManagedNote(store,root,join("X Feed Scraper","Reports",lastRun.id+".md"),report));
+      const relative=join("X Feed Scraper","Reports",lastRun.id+".md");
+      countWrite(writeManagedNote(store,root,relative,report),relative);
     }
-    countWrite(writeManagedNote(store,root,join("X Feed Scraper","Sources.base"),BASE));
+    const baseRelative=join("X Feed Scraper","Sources.base");
+    countWrite(writeManagedNote(store,root,baseRelative,BASE),baseRelative);
     return result;
   } finally {store.close();}
 }
