@@ -179,6 +179,6 @@ test("declarative maps reject prototype traversal and malformed path identifiers
  assert.throws(()=>parseMcpMapping({
   itemsPath:"rows",idPath:"id",type:"incident",
   hasMorePath:"more",nextCursorPath:"cursor",
-  attributes:{"__proto__":"id"}
+  attributes:JSON.parse('{"__proto__":"id"}')
  }),/Invalid MCP mapped attribute name|Invalid MCP/);
 });
