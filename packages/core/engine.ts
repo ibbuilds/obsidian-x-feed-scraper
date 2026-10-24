@@ -107,7 +107,7 @@ export async function runProject(dbPath:string,project:ProjectDefinition,registr
             processed.push({observation,entities});
           }
           // A page that fails during processing never enters this transaction.
-          const committed=store.saveBatch(project.id,source,processed,page.nextCursor);
+          const committed=store.saveBatch(project.id,source,processed,page.nextCursor,project.evaluator);
           stats.observations+=committed.observations;
           stats.newEntities+=committed.newEntities;
           stats.duplicates+=committed.duplicates;
