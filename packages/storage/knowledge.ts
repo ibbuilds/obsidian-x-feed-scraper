@@ -129,6 +129,12 @@ export class KnowledgeStore extends Store {
     this.db.exec("BEGIN IMMEDIATE");
     try{
       for(const {observation,entities} of items){
+        const oldObservation=this.db.prepare(
+          "SELECT type FROM kb_observations WHERE project_id=? AND connection_id=? AND item_id=?"
+        ).get(projectId,source.id,observation.id) as {type:string}|undefined;
+        if(oldObservation&&oldObservation.type!==observation.type){
+          throw new Error("Observation identity reused for a different type");
+        }
         const inserted=this.db.prepare(
           "INSERT OR IGNORE INTO kb_observations(project_id,connection_id,item_id,type,title,text,url,attributes_json,media_json,occurred_at,first_seen,last_seen) "+
           "VALUES(?,?,?,?,?,?,?,?,?,?,?,?)"
@@ -145,6 +151,12 @@ export class KnowledgeStore extends Store {
         if(inserted.changes===0)count.duplicates++;
         count.observations++;
         for(const {draft,assessment} of entities){
+          const oldEntity=this.db.prepare(
+            "SELECT type FROM kb_entities WHERE project_id=? AND entity_key=?"
+          ).get(projectId,draft.key) as {type:string}|undefined;
+          if(oldEntity&&oldEntity.type!==draft.type){
+            throw new Error("Entity identity reused for a different type");
+          }
           const entity=this.db.prepare(
             "INSERT OR IGNORE INTO kb_entities(project_id,entity_key,type,title,url,attributes_json,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?)"
           ).run(projectId,draft.key,draft.type,draft.title,draft.url||null,
