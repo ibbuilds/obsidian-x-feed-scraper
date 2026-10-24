@@ -15,13 +15,15 @@ The sample deliberately does **not** contact X or any other website. It is a sel
 
 ## Configure an authorized source instead
 
-The same wizard offers:
+The same wizard also offers:
 
 - **Public RSS/Atom**: enter a feed URL you may access. The original entry URL is eligible as a resource; optionally enable public metadata enrichment if you consent to external HTTP requests.
-- **Local JSON observations**: enter the absolute path to a JSON array. This also supports records without URLs.
+- **Local JSON observations**: enter the absolute path to a JSON array. Choose *Monitor local JSON changes* to re-read the same stable IDs every run; append-only JSON ingests only new records. This supports records without URLs.
+- **Public JSON API**: enter an authorized HTTPS GET endpoint and a JSON field mapping (for example public job listings).
+- **Public product pages**: enter 1–100 authorized HTTPS product page URLs containing unambiguous Schema.org Product and Offer structured data; arbitrary visual price labels are not supported.
 - **Trusted local MCP server**: choose the local executable (`node` or an absolute path), enter command arguments as a JSON array, specify the exact listing tool, and optionally provide the declarative JSON field mapping described in [MCP setup](mcp-stdio.md). The server **must** already exist locally and expose a legally accessible source.
 
-Choose project-specific keywords, exclusions, entity-extraction mode, minimum output score and an interval. An interval of **0** means manual collection. **15–1440 minutes** enables automatic collection on startup and periodically while the collector runs. A newly scheduled project starts without an extra Sync click.
+Choose project-specific keywords, exclusions, entity-extraction mode, minimum output score, optional monitored-field alert rules and an interval. An interval of **0** means manual collection. **15–1440 minutes** enables automatic collection on startup and periodically while the collector runs. A newly scheduled project starts without an extra Sync click.
 
 ## Storage and privacy
 
@@ -44,3 +46,7 @@ The project switcher lets you activate other projects created with the wizard. T
 - **Source note conflicts:** an edited Markdown note was intentionally preserved; review it manually.
 
 For custom manifest schemas, examples and developer SDK, consult [Projects](projects.md), [SDK](sdk.md), and [MCP integration](mcp-stdio.md).
+
+## Monitor changes between runs
+
+Run the same source project again after the source data changes and expand **Monitoring** in the sidebar. All changed fields are retained in SQLite. Optional watch rules (new entity, specific field changed, numeric increase/decrease, or reaching a value) create locally stored alerts. They do not automatically email, push notifications, or independently verify a merchant price. See `docs/monitoring.md`.

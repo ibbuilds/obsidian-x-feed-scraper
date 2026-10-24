@@ -24,14 +24,14 @@ jobs:
       - name: Publish tested Obsidian plugin preview
         env:
           GH_TOKEN: ${{ github.token }}
-          TAG: v0.7.0-beta.1
+          TAG: v0.8.0-beta.1
         run: |
           if gh release view "$TAG" >/dev/null 2>&1; then
             echo "Preview release already exists; preserving its published asset."
           else
             gh release create "$TAG" dist/obsidian-x-feed-scraper.zip \
-              --title "Discovery Engine for Obsidian v0.7.0 Beta1" \
+              --title "Discovery Engine for Obsidian v0.8.0 Beta1" \
               --target "${{ github.event.workflow_run.head_sha }}" \
               --prerelease \
-              --notes "Extensible, local-first knowledge engine with public adapter/processor/evaluator/output SDK, source-independent project manifests, additive SQLite migration, resumable sync, offline reprocessing, human review, JSON and safe Obsidian outputs. MCP 2026 discovery and legacy stdio integrations, declarative provider field mappings, token-safe environment and immediate scheduled collection are supported. Existing X plugin ID and records remain compatible. Includes no-code first-run project wizard for offline demo, RSS, JSON and trusted local MCP, safe per-vault project files, project switching, explainable provenance, score/review history, and Electron collector restart fix. Personalized X For You remains blocked and is not represented as available; real user-vault validation remains required."
+              --notes "Extensible, local-first knowledge engine with public adapter/processor/evaluator/output SDK, source-independent project manifests, additive SQLite migration, resumable sync, offline reprocessing, human review, JSON and safe Obsidian outputs. MCP 2026 discovery and legacy stdio integrations, declarative provider field mappings, token-safe environment and immediate scheduled collection are supported. Existing X plugin ID and records remain compatible. Includes no-code first-run project wizard for offline demo, RSS, JSON and trusted local MCP, safe per-vault project files, project switching, explainable provenance, score/review history, and Electron collector restart fix. Includes repeatable JSON snapshots, read-only public JSON APIs, Schema.org product offers, immutable entity/observation versions, change audit, currency-safe numeric watch rules, and local Obsidian/CLI monitoring alerts. Personalized X For You remains blocked; account-specific provider integration and real user-vault validation remain outstanding."
           fi

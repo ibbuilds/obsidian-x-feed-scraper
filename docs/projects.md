@@ -88,3 +88,7 @@ A connector can only fetch content it has permission and technical ability to ac
 ## Guided creation from Obsidian
 
 End users can create a complete, schema-validated project without writing a JSON manifest. The **Create research project** wizard supports a built-in offline demo, public RSS, local JSON and trusted MCP stdio, with project-specific interest terms, extraction mode, optional public metadata and schedule. The resulting manifest is written to a private per-vault local data directory; its original source connection configuration remains immutable to protect persisted cursors. Developers can still create advanced projects using JSON and the SDK. See `docs/first-run.md`.
+
+## Repeatable source monitoring and watches
+
+Use `json-snapshot` when a local JSON array of stable-ID observations should be **rechecked on every scheduled run**, unlike append-only `json-file`. Use `public-json` for read-only authorized HTTPS JSON APIs with declarative record mapping and `public-product` for publicly published Schema.org Product/Offer JSON-LD on a set of configured HTTPS pages. The engine stores immutable entity and observation versions plus field-level changes. Optional `watch.rules` evaluate `created`, `changed`, `equals` and numeric percent increase/decrease comparators, with optional unchanged-field guards (e.g. price currency). See `docs/monitoring.md` for working price and job examples and precise boundaries.

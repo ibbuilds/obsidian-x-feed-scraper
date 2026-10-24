@@ -4,7 +4,7 @@
 
 Requirements: Obsidian Desktop **1.9.2+** with the Bases core plugin enabled, and Node.js **22.16+** available to the desktop application.
 
-Download the latest verified `v0.7.0-beta.1` release ZIP. Copy its three standard files (`main.js`, `manifest.json` and `styles.css`) into `<vault>/.obsidian/plugins/x-feed-scraper/`. **Do not rename this directory**: the original plugin ID is preserved for existing users. Enable **Discovery Engine** in Community plugins.
+Download the latest verified `v0.8.0-beta.1` release ZIP. Copy its three standard files (`main.js`, `manifest.json` and `styles.css`) into `<vault>/.obsidian/plugins/x-feed-scraper/`. **Do not rename this directory**: the original plugin ID is preserved for existing users. Enable **Discovery Engine** in Community plugins.
 
 The plugin contains its own verified Node collector, stored outside the vault after first start. It binds an authenticated loopback port and stores its SQLite database in `~/.x-feed-scraper/<vault-hash>/library.db`. If Node cannot be found from a desktop launcher, use its absolute executable path in Settings.
 
@@ -49,3 +49,7 @@ The earlier RSS and manual post ingestion, SQLite source library, visual-only it
 CI executes the generic engine and the real Obsidian Desktop flow in an isolated Linux test vault, plus cross-platform Node tests. It cannot replace this owner's device and connected MCP checks.
 
 The real personalized X "For You" feed is NOT a supported connector, and no authenticated session extraction is performed.
+
+## Watch prices, jobs and other changing data
+
+The project wizard now supports monitoring a changing local JSON snapshot, selecting an authorized public JSON API (including published job-board endpoints), or reading the Schema.org Product/Offer structured prices from supported public HTTPS product pages. Choose an optional watch comparator and monitored JSON pointer. The active project's **Monitoring** panel shows recent field changes and locally triggered alert records; expand each entity's evidence panel to inspect its original observations. The tool does not infer a job is closed merely because it vanished from a page, or compare prices across currencies. See `docs/monitoring.md`.

@@ -2,7 +2,7 @@
 
 **Open-source, local-first engine that turns observations from user-authorized sources into structured, evidence-linked, reviewable knowledge.** It is not a news summarizer. Sources, extractors, evaluators and outputs are interchangeable.
 
-Version **0.7.0 beta**. The Obsidian plugin retains its original ID `x-feed-scraper`, repository URL and ZIP filename to protect existing installations.
+Version **0.8.0 beta**. The Obsidian plugin retains its original ID `x-feed-scraper`, repository URL and ZIP filename to protect existing installations.
 
 ## What it does
 
@@ -13,6 +13,14 @@ Version **0.7.0 beta**. The Obsidian plugin retains its original ID `x-feed-scra
 5. Outputs deliver queryable JSON or safe Markdown/Bases in Obsidian. Existing edited notes remain untouched.
 
 **Not supported:** the real account-personalized X **For You** feed. No provider-authorized integration has been verified. RSS, manually supplied posts and other connectors are not substitutes masquerading as For You. See `docs/x-access.md` and issue #2.
+
+## What else can this power? Changes over time
+
+Discovery Engine can now **monitor identified records between collections**, not merely aggregate new links. It retains immutable source/entity revisions, creates field-level change events, and evaluates optional watch rules. This supports reusable pipelines for price-history tracking, job opportunity radar, security advisories and other domain-specific datasets.
+
+Reproducible examples: `examples/price-monitor/project.json` (USD 129.99 → 99.99, alert on ≥10% reduction) and `examples/job-radar/project.json` (new job, explicit status update and changed location). Both use the same generic engine and source interface. Real authorized inputs can use `public-json` (such as a public Greenhouse job board) or `public-product` (a public Schema.org Product/Offer page); support depends on what each provider exposes.
+
+**Alerts are currently local records and an Obsidian/CLI feed**, not push notifications. Disappearance from a job board is not sufficient evidence of closure; price comparisons are guarded against currency changes. See [Monitoring guide](docs/monitoring.md).
 
 ## First run in Obsidian — no code or JSON required
 
@@ -61,7 +69,7 @@ All example inputs are synthetic. Project manifests define source adapters, an o
 ## Install in Obsidian Desktop
 
 1. Install Obsidian Desktop **1.9.2+** and Node.js **22.16+**.
-2. Download the [v0.7.0-beta.1 release](https://github.com/ibbuilds/obsidian-x-feed-scraper/releases/tag/v0.7.0-beta.1).
+2. Download the [v0.8.0-beta.1 release](https://github.com/ibbuilds/obsidian-x-feed-scraper/releases/tag/v0.8.0-beta.1).
 3. Extract `main.js`, `manifest.json` and `styles.css` into `<vault>/.obsidian/plugins/x-feed-scraper/`. Keep this directory: the plugin ID is intentionally backward compatible.
 4. Enable **Bases** under Core plugins, then **Discovery Engine** under Community plugins.
 5. Click **Create research project** in the sidebar to use the guided setup (including an offline test), or supply an existing absolute **Research project manifest** in Settings for advanced use.
@@ -92,6 +100,6 @@ Collection is bounded by authorized source permissions, rate limits, available r
 
 CI validates different domains, the external SDK example, migration, cursor recovery and safe exports, plus real Obsidian Desktop in an **isolated** vault. The user's personal vault and connected Obsidian MCP still require their own smoke test. Personalized X For You remains blocked pending an authorized connector.
 
-Documentation: `docs/first-run.md`, `docs/projects.md`, `docs/sdk.md`, `docs/mcp-stdio.md`, `docs/architecture.md`, `docs/security.md`, `docs/migration-v0.5.md`, `docs/plugin-guide.md`, `docs/x-access.md` and `docs/acceptance-matrix.md`.
+Documentation: `docs/monitoring.md`, `docs/first-run.md`, `docs/projects.md`, `docs/sdk.md`, `docs/mcp-stdio.md`, `docs/architecture.md`, `docs/security.md`, `docs/migration-v0.5.md`, `docs/plugin-guide.md`, `docs/x-access.md` and `docs/acceptance-matrix.md`.
 
 Contributions are welcome under the MIT license. Never commit credentials or private user data.
