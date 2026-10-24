@@ -1,5 +1,6 @@
 import {spawn, type ChildProcessWithoutNullStreams} from "node:child_process";
 import {isAbsolute} from "node:path";
+import {StringDecoder} from "node:string_decoder";
 import type {JsonRecord,ObservationPage,SourceAdapter} from "../sdk/contracts.ts";
 import {validateObservation,jsonRecord} from "../core/project-config.ts";
 
@@ -66,6 +67,7 @@ class StdioPeer {
   private pending=new Map<number,{resolve:(v:unknown)=>void;reject:(e:Error)=>void}>();
   private nextId=1;
   private stdout="";
+  private decoder=new StringDecoder("utf8");
   private totalBytes=0;
   private fatalError:Error|undefined;
   private stopping=false;
@@ -100,7 +102,7 @@ class StdioPeer {
     if(this.stopping||this.fatalError)return;
     this.totalBytes+=chunk.byteLength;
     if(this.totalBytes>4_000_000){this.fail(new Error("MCP response exceeds 4 MB"));return;}
-    this.stdout+=chunk.toString("utf8");
+    this.stdout+=this.decoder.write(chunk);
     if(this.stdout.length>2_000_000){this.fail(new Error("MCP response line too large"));return;}
     for(let pos=this.stdout.indexOf("\n");pos>=0;pos=this.stdout.indexOf("\n")){
       const line=this.stdout.slice(0,pos).trim();
