@@ -34,3 +34,9 @@ The Obsidian output uses safe vault paths and SHA-256 fingerprints to update onl
 ## MCP subprocess boundary
 
 `mcp-stdio` launches an explicit trusted local executable without a shell, terminates the subprocess after a page, and limits response size and execution time. It forwards a minimal OS environment: the collector's `XFS_API_TOKEN` is **not forwarded** by default. `passEnv` can explicitly forward selected OS variables to a trusted MCP tool. A child process is **not sandboxed**: it still has the user's filesystem/network permissions. Never load untrusted MCP servers or grant them private sessions without authorization.
+
+## Guided project creation
+
+The first-run wizard creates unique, create-only manifests under the local per-vault `~/.x-feed-scraper/<vault-hash>/projects/` directory, outside Obsidian vault sync. New files use mode 0600 where supported and directories mode 0700. The bundled demo is synthetic and performs no network request. The wizard validates source URLs, executable choice and optional MCP field mappings before starting a project. A newly created built-in project never automatically inherits a previously configured third-party extension. Changing the active project does not alter the source identifiers or raw records of another project.
+
+The bundled Electron bridge handles numeric browser timers during shutdown; the old unconditional Node-style `.unref()` crash has been fixed. Proper process cleanup prevents duplicate collector instances during restarts.

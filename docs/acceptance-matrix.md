@@ -1,4 +1,4 @@
-# Discovery Engine 0.6.0 acceptance and release boundaries
+# Discovery Engine 0.7.0 acceptance and release boundaries
 
 CI verification refers to the automated GitHub Actions tests, not the user's personal Obsidian vault or X account. Feature status must not be inferred from installability alone.
 
@@ -16,7 +16,8 @@ CI verification refers to the automated GitHub Actions tests, not the user's per
 | Optional public metadata research | Implemented; explicitly opt-in | DNS-pinned public HTTP, blocks private destinations and X, per-run limit |
 | Non-URL resources | Implemented and tested | Security advisory, ticket and research record entity examples |
 | JSON and guarded Obsidian outputs | Implemented and tested | Markdown/Bases notes, SHA-256 ownership ledger, no modification of manual notes |
-| Obsidian Desktop project UI | Implemented and tested in isolated Linux desktop | Project manifest, sidebar list, run, review and export; owner-device smoke test pending |
+| Obsidian Desktop project UI | Implemented and tested in isolated Linux desktop | Guided no-code project creation, offline demo, saved-project switching, provenance and review history; owner-device smoke test pending |
+| Guided project setup and offline sample | Tested in real Obsidian Desktop | RSS/JSON/MCP/demo setup, bundled offline sample completes without external services or touching References.md |
 | CLI without Obsidian | Implemented and tested | project sync, list, entities, review, reprocess and export |
 | Additive migration of v0.4.0 | Implemented and tested | Original posts, sources, relations, reviews and References.md retained |
 | MCP interoperability | Tested with synthetic servers | Modern 2026-07-28 and legacy stdio, explicit selected tools, declarative provider JSON mapping, timeouts and secret scoping |

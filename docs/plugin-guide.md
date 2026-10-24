@@ -4,13 +4,23 @@
 
 Requirements: Obsidian Desktop **1.9.2+** with the Bases core plugin enabled, and Node.js **22.16+** available to the desktop application.
 
-Download the latest verified `v0.6.0-beta.1` release ZIP. Copy its three standard files (`main.js`, `manifest.json` and `styles.css`) into `<vault>/.obsidian/plugins/x-feed-scraper/`. **Do not rename this directory**: the original plugin ID is preserved for existing users. Enable **Discovery Engine** in Community plugins.
+Download the latest verified `v0.7.0-beta.1` release ZIP. Copy its three standard files (`main.js`, `manifest.json` and `styles.css`) into `<vault>/.obsidian/plugins/x-feed-scraper/`. **Do not rename this directory**: the original plugin ID is preserved for existing users. Enable **Discovery Engine** in Community plugins.
 
 The plugin contains its own verified Node collector, stored outside the vault after first start. It binds an authenticated loopback port and stores its SQLite database in `~/.x-feed-scraper/<vault-hash>/library.db`. If Node cannot be found from a desktop launcher, use its absolute executable path in Settings.
 
+## No-code first-run test
+
+1. Click **Create research project** in the Discovery Engine sidebar.
+2. Choose **Built-in offline demo** and **Create & run project**. It reads synthetic data without external requests.
+3. Examine the resource cards and expand **Sources, evidence and review history** to see original observations, assessment changes and human review decisions.
+4. Create a second project for public RSS/Atom, local JSON or a trusted local MCP tool. Configure research terms, extraction mode, minimum score, optional public metadata and a schedule in the wizard.
+5. Use **Switch project** to activate another saved project. The original SQLite library and `References.md` remain untouched by generic output.
+
+Projects are saved privately under `~/.x-feed-scraper/<vault-hash>/projects/` rather than in the synced vault. Full instructions: `docs/first-run.md`.
+
 ## Run any research project
 
-1. Create a JSON project manifest using `docs/projects.md` (or start from `examples/frontend/project.json`).
+1. Alternatively, create a JSON project manifest using `docs/projects.md` (or start from `examples/frontend/project.json`).
 2. Configure the source adapters allowed to access your chosen sources. Optional third-party extensions must be installed and approved manually.
 3. Enter the absolute manifest path under **Settings → Research project manifest**. For an external extension, enter its trusted absolute `.cjs` path.
 4. Choose a sync interval (0 means manual execution; 15 minutes minimum for scheduled projects). Restart collector. A scheduled source collects immediately on startup, then on its interval, and displays status in the sidebar.
