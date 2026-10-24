@@ -136,10 +136,11 @@ function readPage(store:KnowledgeStore,projectId:string,dataset:DataSet,
     minScore:integer(flags,"min-score",0,0,100)
   });
 }
-function exportedEntity(store:KnowledgeStore,id:string,entity:KnowledgeEntity,compact:boolean):unknown{
+type ProvenancePage=ReturnType<KnowledgeStore["entityProvenanceBatch"]>;
+function exportedEntity(entity:KnowledgeEntity,detail:ProvenancePage extends Map<string,infer P>?P:never,
+  compact:boolean):unknown{
   if(compact)return entity;
-  const detail=store.entityEvidence(id,entity.key);
-  if(!detail)throw new Error("Entity disappeared during export");
+  if(!detail)throw new Error("Entity evidence disappeared during export");
   return {...entity,provenance:{
     mentions:detail.mentions,reviews:detail.reviews,assessmentHistory:detail.assessments,
     mentionsTruncated:entity.observationCount>detail.mentions.length
@@ -170,9 +171,12 @@ async function streamExport(store:KnowledgeStore,id:string,dataset:DataSet,flags
       const size=Math.min(500,remaining);
       const page=readPage(store,id,dataset,size,current,flags);
       if(!page.length)break;
+      const fullEvidence=dataset==="entities"&&!compact?
+        store.entityProvenanceBatch(id,(page as KnowledgeEntity[]).map(item=>item.key)):undefined;
       const serialized=page.map(item=>{
         const record=dataset==="entities"?
-          exportedEntity(store,id,item as KnowledgeEntity,compact):item;
+          exportedEntity(item as KnowledgeEntity,
+            fullEvidence?.get((item as KnowledgeEntity).key),compact):item;
         return format==="json"?JSON.stringify(record):JSON.stringify({
           schemaVersion:DATA_VERSION,dataset,projectId:id,record
         });
