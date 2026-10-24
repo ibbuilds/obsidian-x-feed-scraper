@@ -136,8 +136,8 @@ function readPage(store:KnowledgeStore,projectId:string,dataset:DataSet,
     minScore:integer(flags,"min-score",0,0,100)
   });
 }
-type ProvenancePage=ReturnType<KnowledgeStore["entityProvenanceBatch"]>;
-function exportedEntity(entity:KnowledgeEntity,detail:ProvenancePage extends Map<string,infer P>?P:never,
+type EntityProvenance=ReturnType<KnowledgeStore["entityProvenanceBatch"]> extends Map<string,infer T>?T:never;
+function exportedEntity(entity:KnowledgeEntity,detail:EntityProvenance|undefined,
   compact:boolean):unknown{
   if(compact)return entity;
   if(!detail)throw new Error("Entity evidence disappeared during export");
