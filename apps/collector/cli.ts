@@ -29,6 +29,7 @@ const HELP=[
   "  sync --feed https://example.org/feed.xml [--vault /vault]",
   "  sync --fixture tests/fixtures/posts.json     [demo only]",
   "  serve --feed https://example.org/feed.xml --interval 60 --port 0",
+  "  serve --project examples/frontend/project.json --interval 60 --port 0",
   "  sources [--status needs_review] [--search motion] | posts | status | history",
   "  enrich --limit 10 | export --vault /vault | recommendations | report",
   "  review --id 1 --decision approved --reason 'Useful source'",
@@ -76,7 +77,8 @@ async function main():Promise<void>{
     const port=Number(option("port")??47321),intervalMinutes=Number(option("interval")??0);
     const server=startServer({db,profile,feed,fixture,vault,references:refsPath,
       token:process.env.XFS_API_TOKEN||"",port,intervalMinutes,
-      autoEnrich:option("auto-enrich")==="true"});
+      autoEnrich:option("auto-enrich")==="true",
+      projectPath:option("project"),extensionPath:option("extension")});
     server.on("listening",()=>{
       const address=server.address();
       const actual=address&&typeof address!=="string"?address.port:port;
