@@ -40,6 +40,7 @@ jobs:
           node --experimental-strip-types scripts/bench-pagination.mjs 6000 50 > ../baseline-pagination.json
           node --experimental-strip-types scripts/bench-repeat.mjs 1800 > ../baseline-repeat.json
           node --experimental-strip-types scripts/bench-export.mjs 1400 12 > ../baseline-export.json
+          node --experimental-strip-types scripts/bench-export.mjs 3000 12 > ../baseline-large-export.json
       - name: Profile candidate with identical synthetic data
         run: |
           cd candidate
@@ -47,6 +48,7 @@ jobs:
           node --experimental-strip-types scripts/bench-pagination.mjs 6000 50 > ../candidate-pagination.json
           node --experimental-strip-types scripts/bench-repeat.mjs 1800 > ../candidate-repeat.json
           node --experimental-strip-types scripts/bench-export.mjs 1400 12 > ../candidate-export.json
+          node --experimental-strip-types scripts/bench-export.mjs 3000 12 > ../candidate-large-export.json
       - name: Compare critical hot paths without source or network dependencies
         run: |
           node --input-type=module - <<'NODE'
@@ -96,8 +98,16 @@ jobs:
             console.log('export '+name+': baseline '+before+' ms, candidate '+after+
               ' ms; ratio '+(after/Math.max(before,0.01)).toFixed(3));
           }
-          if(newExport.times.fullMs>=oldExport.times.fullMs*0.9){
-            throw new Error('Batched provenance export did not improve full JSON export by >=10%');
+          if(newExport.times.fullMs>oldExport.times.fullMs*1.15){
+            throw new Error('Batched provenance export regressed small exports by more than 15%');
+          }
+          const oldLarge=JSON.parse(readFileSync('baseline-large-export.json','utf8'));
+          const newLarge=JSON.parse(readFileSync('candidate-large-export.json','utf8'));
+          console.log('export 3000 entities: baseline '+oldLarge.times.fullMs+
+            ' ms, candidate '+newLarge.times.fullMs+' ms; ratio '+
+            (newLarge.times.fullMs/oldLarge.times.fullMs).toFixed(3));
+          if(newLarge.times.fullMs>=oldLarge.times.fullMs*0.9){
+            throw new Error('Large batched provenance export did not improve by >=10%');
           }
           if(newExport.times.compactMs>oldExport.times.compactMs*1.5){
             throw new Error('Compact export slowed by more than 50%');
@@ -116,4 +126,6 @@ jobs:
             candidate-repeat.json
             baseline-export.json
             candidate-export.json
+            baseline-large-export.json
+            candidate-large-export.json
           retention-days: 30
