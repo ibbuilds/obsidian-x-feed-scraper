@@ -1,4 +1,12 @@
-# Discovery Engine architecture
+# Source Scraper architecture — JSON-first engine
+
+## Runtime boundaries
+
+The primary product is `dist/source-scraper.mjs`, a bundled, standalone Node.js CLI. It reads versioned project and observation JSON, persists relationships and versions to SQLite, and emits versioned JSON/NDJSON. It never requires Obsidian or invokes external output adapters implicitly. `apps/collector/source-cli.ts` implements this public interface.
+
+`packages/core/extensions.ts` registers only source-independent SDK adapters, JSON output and opt-in webhook output. Optional Obsidian integration modules live in `packages/integrations/`, with the Obsidian-specific registration in `createObsidianRegistry()`. Legacy Obsidian services deliberately import that optional registry. The plugin frontend lives in `apps/obsidian-plugin/`; it has its own ZIP and integration tests. Neither the CLI nor the core registry imports this plugin.
+
+The `packages/core/project-builder.ts` is a compatibility helper for the older Obsidian no-code wizard; new generic CLI starters use `packages/core/demo.ts` directly. The core engine and JSON contracts are the reusable substrate; consumers are free to build alternate interfaces independently.
 
 ## Invariant: the engine is independent of sources, domains and outputs
 
