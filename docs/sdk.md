@@ -75,3 +75,7 @@ Adapters should use provider-authorized interfaces and never persist cookies/cre
 CI exercises frontend resource extraction, non-web security/research entities and a separate custom ticket adapter/processor/evaluator. It verifies source cursor recovery after a failed page, project-specific review isolation and additive import from v0.4.0.
 
 This is a source-level SDK. A separately versioned npm SDK package has not been published; the `apiVersion:1` contract is the compatibility boundary for external extensions.
+
+## Bridging existing MCP servers
+
+The built-in `mcp-stdio` source calls an explicitly selected listing tool on a trusted local server. It can map arbitrary provider JSON fields into observations without additional TypeScript code. See `docs/mcp-stdio.md`. A connected MCP does not automatically imply access to private or personalized provider timelines.

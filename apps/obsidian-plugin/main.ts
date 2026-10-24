@@ -29,6 +29,8 @@ interface Stats {
   active:boolean;paused:boolean;connectedSource:string;
   personalizedXFeed:string;feedUrl?:string|null;autoEnrich?:boolean;
   activeProjectId?:string|null;
+  scheduler?:{enabled:boolean;intervalMinutes:number;lastAttempt:string|null;
+    lastSuccess:string|null;lastFailure:string|null};
   lastRun?:{started_at:string;ended_at:string;status:string;posts_seen:number;duplicates:number};
 }
 interface Recommendations {
@@ -207,6 +209,14 @@ class SourceView extends ItemView {
         stats.active?"Synchronization running":"Collector active; service bound to localhost only"});
       if(stats.lastRun)root.createEl("p",{cls:"xfs-meta",text:"Last run: "+
         (stats.lastRun.ended_at||stats.lastRun.started_at)+" ("+stats.lastRun.status+")"});
+      if(stats.scheduler?.enabled){
+        const schedule=stats.scheduler;
+        root.createEl("p",{cls:"xfs-meta",text:"Automatic collection every "+
+          schedule.intervalMinutes+" minutes · Last successful run: "+
+          (schedule.lastSuccess||"Not yet")});
+        if(schedule.lastFailure)root.createEl("p",{cls:"xfs-warning",text:
+          "Scheduled source warning: "+schedule.lastFailure});
+      }
       const generic=root.createDiv({cls:"xfs-projects"});
       generic.createEl("h4",{text:"Knowledge projects"});
       const active=stats.activeProjectId;
@@ -261,6 +271,17 @@ class SourceView extends ItemView {
               this.plugin,active,record,decision,()=>{void this.draw();}
             ).open());
           }
+        }
+        const runs=await this.plugin.call("/project/runs?project="+
+          encodeURIComponent(active)) as Array<{connection_id:string;status:string;
+          started_at:string;observations:number;new_entities:number;error?:string}>;
+        const activity=generic.createEl("details");
+        activity.createEl("summary",{text:"Project run history ("+runs.length+")"});
+        for(const run of runs.slice(0,12)){
+          activity.createEl("p",{cls:"xfs-meta",
+            text:run.started_at+" · "+run.connection_id+" · "+run.status+
+              " · "+run.observations+" observations · "+run.new_entities+
+              " new entities"+(run.error?" · "+run.error:"")});
         }
       }else{
         generic.createEl("p",{cls:"xfs-muted",text:

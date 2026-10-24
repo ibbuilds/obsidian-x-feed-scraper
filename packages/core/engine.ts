@@ -4,7 +4,7 @@ import {KnowledgeStore} from "../storage/knowledge.ts";
 import type {Registry,ProjectDefinition,EntityDraft,Observation,Assessment,KnowledgeEntity} from "../sdk/contracts.ts";
 
 export interface SourceRun {
-  sourceId:string;runId:string;status:"success"|"failed";
+  sourceId:string;runId:string;status:"success"|"partial"|"failed";
   observations:number;newEntities:number;duplicates:number;error?:string;
 }
 export interface ProjectRun {
@@ -114,8 +114,14 @@ export async function runProject(dbPath:string,project:ProjectDefinition,registr
           cursor=page.nextCursor;
           if(!page.hasMore){finished=true;break;}
         }
-        if(!finished)throw new Error("Maximum page count reached; cursor saved for continuation");
-        store.finishRun(runId,"success",stats);
+        if(!finished){
+          // Reaching a configured work budget is not a connector malfunction:
+          // keep the committed cursor and continue in a later scheduled cycle.
+          stats.status="partial";
+          stats.error="Page budget reached; checkpoint saved for continuation";
+          result.success=false;
+          store.finishRun(runId,"partial",stats,stats.error);
+        }else store.finishRun(runId,"success",stats);
       }catch(error){
         stats.status="failed";
         stats.error=summarize(error);

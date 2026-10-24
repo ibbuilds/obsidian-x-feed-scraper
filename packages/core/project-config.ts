@@ -175,10 +175,27 @@ export function parseProject(raw:unknown):ProjectDefinition{
 export function loadProject(file:string):ProjectDefinition{
   const path=resolve(file);
   const project=parseProject(JSON.parse(readFileSync(path,"utf8")) as unknown);
-  // Local fixture paths are anchored to this manifest, not the process cwd.
+  // Paths to local inputs and explicitly trusted scripts are anchored to the
+  // manifest so projects work from both the CLI and Obsidian's vault-based cwd.
+  const local=(value:string)=>value.startsWith("./")||value.startsWith("../")||
+    value.startsWith(".\\")||value.startsWith("..\\");
   for(const source of project.sources){
     if(source.adapter==="json-file"&&typeof source.config.path==="string"){
       source.config.path=resolve(dirname(path),source.config.path);
+    }
+    if(source.adapter==="mcp-stdio"){
+      if(typeof source.config.command==="string"&&local(source.config.command)){
+        source.config.command=resolve(dirname(path),source.config.command);
+      }
+      if(typeof source.config.cwd==="string"&&local(source.config.cwd)){
+        source.config.cwd=resolve(dirname(path),source.config.cwd);
+      }
+      if(Array.isArray(source.config.args)){
+        source.config.args=source.config.args.map(value=>
+          typeof value==="string"&&local(value)?
+            resolve(dirname(path),value):value
+        ) as string[];
+      }
     }
   }
   return project;

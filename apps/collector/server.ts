@@ -93,6 +93,9 @@ export function startServer(config:ServerOptions):ReturnType<typeof createServer
   const initial=new Store(config.db);
   let paused=initial.paused();initial.close();
   let busy=false;
+  const scheduler:{lastAttempt:string|null;lastSuccess:string|null;lastFailure:string|null}={
+    lastAttempt:null,lastSuccess:null,lastFailure:null
+  };
   const references=()=>referencesFromFile(config.references||
     (config.vault&&existsSync(join(config.vault,"References.md"))?join(config.vault,"References.md"):undefined));
   const source=()=>config.feed?"rss":config.fixture?"fixture":"none";
@@ -264,12 +267,14 @@ export function startServer(config:ServerOptions):ReturnType<typeof createServer
             sqliteIntegrity:integrity,
             vaultPresent:Boolean(config.vault&&existsSync(config.vault)),
             referencesPresent:Boolean(referencePath&&existsSync(referencePath)),
-            collectorInput:source(),
+            collectorInput:configuredProject?"project:"+configuredProject.id:source(),
             personalizedXFeedAvailable:false,
             activeProjectId:configuredProject?.id||null,
             readyForManualImport:integrity==="ok",
-            readyForScheduledDiscovery:integrity==="ok"&&Boolean(config.feed),
-            nextStep:config.feed?"Verify the authorized source in /history":"Configure a permitted RSS URL or import observations manually"
+            readyForScheduledDiscovery:integrity==="ok"&&Boolean(config.feed||configuredProject),
+            nextStep:configuredProject?"Inspect /project/runs for connection results":
+              config.feed?"Verify the authorized source in /history":
+              "Configure a research project, permitted RSS feed, or import observations manually"
           });
         }else if(req.method==="GET"&&url.pathname==="/source"){
           const id=Number(url.searchParams.get("id"));
@@ -281,7 +286,9 @@ export function startServer(config:ServerOptions):ReturnType<typeof createServer
         }else if(req.method==="GET"&&url.pathname==="/status"){
           json(res,200,{...store.stats(),active:busy,paused,connectedSource:source(),
             personalizedXFeed:"not_available",feedUrl:config.feed||null,
-            activeProjectId:configuredProject?.id||null,autoEnrich:Boolean(config.autoEnrich)});
+            activeProjectId:configuredProject?.id||null,autoEnrich:Boolean(config.autoEnrich),
+            scheduler:{...scheduler,enabled:config.intervalMinutes>0&&Boolean(configuredProject||config.feed||config.fixture),
+              intervalMinutes:config.intervalMinutes}});
         }else if(req.method==="GET"&&url.pathname==="/sources"){
           json(res,200,store.listSources(url.searchParams.get("status")||undefined,
             url.searchParams.get("q")||undefined,Number(url.searchParams.get("limit")||100),
@@ -318,16 +325,34 @@ export function startServer(config:ServerOptions):ReturnType<typeof createServer
     }
   });
   server.listen(config.port,"127.0.0.1");
-  if(config.intervalMinutes>0){
-    const timer=setInterval(()=>{
-      if(paused||busy)return;
-      if(configuredProject){
-        void collectProject().catch(()=>{/* Per-source failure is recorded in kb_runs. */});
-      }else if(config.feed||config.fixture){
-        void collect().catch(()=>{/* Failure already recorded by the connector or pipeline. */});
-      }
-    },Math.max(15,config.intervalMinutes)*60_000);
-    timer.unref();server.on("close",()=>clearInterval(timer));
+  if(config.intervalMinutes>0&&(configuredProject||config.feed||config.fixture)){
+    const runScheduled=()=>{
+      if(paused||busy||!server.listening)return;
+      scheduler.lastAttempt=new Date().toISOString();
+      const job=configuredProject?collectProject():collect();
+      void job.then(value=>{
+        const generic=(value as {result?:{success?:boolean;errors?:number}}).result;
+        if(generic?.success===false||(generic?.errors||0)>0){
+          const projectRuns=(value as {result?:{runs?:Array<{status:string}>}}).result?.runs||[];
+          scheduler.lastFailure=projectRuns.length&&projectRuns.every(run=>
+            run.status==="success"||run.status==="partial")?
+            "Work budget reached; remaining pages will resume next cycle":
+            "Some observations or connections failed; inspect project runs";
+        }else{
+          scheduler.lastFailure=null;
+          scheduler.lastSuccess=new Date().toISOString();
+        }
+      }).catch(()=>{
+        // Errors were recorded in per-connection runs; never echo feed URLs or secrets.
+        scheduler.lastFailure="Collection failed; inspect project runs or recent errors";
+      });
+    };
+    const timer=setInterval(runScheduled,config.intervalMinutes*60_000);
+    timer.unref();
+    // First successful launch should start collecting, not wait a full interval.
+    // This is only enabled for an explicitly configured scheduled source.
+    server.once("listening",()=>{setImmediate(runScheduled);});
+    server.once("close",()=>clearInterval(timer));
   }
   return server;
 }

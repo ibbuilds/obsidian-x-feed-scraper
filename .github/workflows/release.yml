@@ -24,14 +24,14 @@ jobs:
       - name: Publish tested Obsidian plugin preview
         env:
           GH_TOKEN: ${{ github.token }}
-          TAG: v0.5.0-beta.1
+          TAG: v0.6.0-beta.1
         run: |
           if gh release view "$TAG" >/dev/null 2>&1; then
             echo "Preview release already exists; preserving its published asset."
           else
             gh release create "$TAG" dist/obsidian-x-feed-scraper.zip \
-              --title "Discovery Engine for Obsidian v0.5.0 Beta1" \
+              --title "Discovery Engine for Obsidian v0.6.0 Beta1" \
               --target "${{ github.event.workflow_run.head_sha }}" \
               --prerelease \
-              --notes "Extensible, local-first knowledge engine with public adapter/processor/evaluator/output SDK, source-independent project manifests, additive SQLite migration, resumable sync, offline reprocessing, human review, JSON and safe Obsidian outputs. Existing X plugin ID and records remain compatible. Personalized X For You remains blocked and is not represented as available; user-device validation is still required."
+              --notes "Extensible, local-first knowledge engine with public adapter/processor/evaluator/output SDK, source-independent project manifests, additive SQLite migration, resumable sync, offline reprocessing, human review, JSON and safe Obsidian outputs. MCP 2026 discovery and legacy stdio integrations, declarative provider field mappings, token-safe environment and immediate scheduled collection are supported. Existing X plugin ID and records remain compatible. Personalized X For You remains blocked and is not represented as available; user-device validation is still required."
           fi

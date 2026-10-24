@@ -1,0 +1,50 @@
+{
+  "id": "mcp-lab-research",
+  "name": "MCP Scientific Research",
+  "sources": [
+    {
+      "id": "local-mcp",
+      "adapter": "mcp-stdio",
+      "config": {
+        "command": "node",
+        "args": [
+          "../../tests/fixtures/mock-mcp-server.cjs"
+        ],
+        "tool": "list_records",
+        "arguments": {},
+        "timeoutMs": 15000
+      }
+    }
+  ],
+  "pipeline": [
+    "observation-entity"
+  ],
+  "evaluator": "keyword",
+  "policy": {
+    "includeKeywords": [
+      "microscopy",
+      "experimental"
+    ],
+    "excludeKeywords": [],
+    "minimumScore": 0
+  },
+  "entitySchemas": {
+    "lab-record": {
+      "fields": {
+        "specimen": "string",
+        "samples": "number"
+      },
+      "required": [
+        "specimen",
+        "samples"
+      ]
+    }
+  },
+  "outputs": [
+    {
+      "id": "structured-data",
+      "adapter": "json",
+      "config": {}
+    }
+  ]
+}

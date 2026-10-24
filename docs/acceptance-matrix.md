@@ -1,11 +1,11 @@
-# Discovery Engine 0.5.0 acceptance and release boundaries
+# Discovery Engine 0.6.0 acceptance and release boundaries
 
 CI verification refers to the automated GitHub Actions tests, not the user's personal Obsidian vault or X account. Feature status must not be inferred from installability alone.
 
 | Requirement | Status | Evidence/limitations |
 | --- | --- | --- |
 | Independent generic core | Implemented and tested | Projects/observations/entities do not require X, URLs or Obsidian |
-| Source adapter SDK | Implemented and tested | Built-in JSON/RSS and external sample ticket adapter |
+| Source adapter SDK | Implemented and tested | Built-in JSON/RSS/MCP stdio and external sample ticket adapter |
 | Processor/evaluator/output SDK | Implemented and tested | External ticket processor/evaluator, built-in generic pipelines and JSON/Obsidian outputs |
 | Custom entity schemas | Implemented and tested | Typed JSON fields + validation; security/ticket/research examples |
 | Project-specific evaluations and reviews | Implemented and tested | Separate project IDs prevent cross-project scoring/review contamination |
@@ -19,6 +19,7 @@ CI verification refers to the automated GitHub Actions tests, not the user's per
 | Obsidian Desktop project UI | Implemented and tested in isolated Linux desktop | Project manifest, sidebar list, run, review and export; owner-device smoke test pending |
 | CLI without Obsidian | Implemented and tested | project sync, list, entities, review, reprocess and export |
 | Additive migration of v0.4.0 | Implemented and tested | Original posts, sources, relations, reviews and References.md retained |
+| MCP interoperability | Tested with synthetic servers | Modern 2026-07-28 and legacy stdio, explicit selected tools, declarative provider JSON mapping, timeouts and secret scoping |
 | External extensions security sandbox | **Not implemented** | Only explicitly trusted local .cjs files; OS-level isolation needed for untrusted modules |
 | True account-personalized X For You connector | **Blocked** | No verified authorized endpoint/provider method; no real user feed accessed |
 | Actual owner's Obsidian/MCP installation | **Not verified** | CI uses isolated test vaults, not the owner's device and files |

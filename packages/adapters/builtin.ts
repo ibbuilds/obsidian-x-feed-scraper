@@ -3,6 +3,7 @@ import {resolve} from "node:path";
 import {fetchRSS} from "../connectors/rss.ts";
 import type {Extension,Observation,SourceAdapter} from "../sdk/contracts.ts";
 import {validateObservation} from "../core/project-config.ts";
+import {mcpStdioSource} from "./mcp-stdio.ts";
 import {normalizeUrl} from "../core/url.ts";
 
 function path(config:Record<string,unknown>):string{
@@ -49,4 +50,4 @@ const rss:SourceAdapter={
     return {observations,nextCursor:hasMore?String(next):undefined,hasMore};
   }
 };
-export const builtinSources:Extension={apiVersion:1,adapters:[jsonFile,rss]};
+export const builtinSources:Extension={apiVersion:1,adapters:[jsonFile,rss,mcpStdioSource]};

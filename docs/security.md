@@ -30,3 +30,7 @@ The Obsidian output uses safe vault paths and SHA-256 fingerprints to update onl
 - Respect provider terms, permissions, rate limits and legally required data retention.
 - Do not expose the API outside loopback, forward the in-memory token or run untrusted extensions.
 - Real-vault integration and personalized X access remain unverified until the user tests them with the correct permissions.
+
+## MCP subprocess boundary
+
+`mcp-stdio` launches an explicit trusted local executable without a shell, terminates the subprocess after a page, and limits response size and execution time. It forwards a minimal OS environment: the collector's `XFS_API_TOKEN` is **not forwarded** by default. `passEnv` can explicitly forward selected OS variables to a trusted MCP tool. A child process is **not sandboxed**: it still has the user's filesystem/network permissions. Never load untrusted MCP servers or grant them private sessions without authorization.

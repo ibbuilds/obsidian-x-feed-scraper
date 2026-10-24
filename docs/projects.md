@@ -31,6 +31,7 @@ Projects isolate entities, assessments, reviews, connections and checkpoints by 
 
 - `json-file` reads a JSON observation array and advances a persisted cursor through it; paths are relative to the manifest.
 - `rss` fetches public user-authorized RSS/Atom feeds via the SSRF-hardened network client and rechecks the currently exposed feed entries on every run (the source returns at most 50 entries per fetch).
+- `mcp-stdio` calls one selected tool on a trusted local MCP server with automatic modern/legacy negotiation, page cursors and optional declarative response mappings. See `docs/mcp-stdio.md`.
 - Custom sources are user-provided extensions; `examples/extensions/tickets.cjs` demonstrates this without any core changes.
 
 Each observation has a stable ID and type plus optional title, text, URL, linked URLs, images, timestamp and JSON attributes. Records do **not** need web URLs.
@@ -64,7 +65,7 @@ Entity schemas are optional manifest rules that type-check JSON attributes (`str
 
 ## Scheduler, CLI and Obsidian
 
-In Obsidian, set a manifest path in **Discovery Engine → Settings → Research project manifest**, restart the collector and use the project dashboard to run, review and export. Configure the interval (minimum 15 minutes for projects); it executes while the collector is active. Without Obsidian, the CLI can be supervised by your OS scheduler.
+In Obsidian, set a manifest path in **Discovery Engine → Settings → Research project manifest**, restart the collector and use the project dashboard to run, review and export. Configure the interval (minimum 15 minutes for projects); it runs immediately after service startup and then on its interval while the collector is active (unless paused). Without Obsidian, the CLI can be supervised by your OS scheduler.
 
 A shared SQLite database can host many separate projects. The Obsidian UI configures one active project at a time and displays the library; the CLI can execute any number of manifests.
 

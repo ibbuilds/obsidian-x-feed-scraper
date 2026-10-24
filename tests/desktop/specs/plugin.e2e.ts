@@ -121,4 +121,42 @@ describe("X Feed Scraper in actual Obsidian Desktop",function(){
     expect(state.files.some(path=>path.startsWith("Discovery Engine/desktop-generic/"))).toBe(true);
   });
 
+  it("collects from a trusted MCP stdio server within real Obsidian without touching References",async()=>{
+    const original=await browser.executeObsidian(async({app,obsidian})=>{
+      const file=app.vault.getAbstractFileByPath("References.md");
+      if(!(file instanceof obsidian.TFile))throw new Error("Missing test library");
+      return await app.vault.read(file);
+    });
+    const boot=await browser.executeObsidian(async({app})=>{
+      const instance=(app as unknown as {plugins:{plugins:Record<string,{
+        settings:{projectManifestPath:string;intervalMinutes:number};
+        saveSettings:()=>Promise<void>;restart:()=>Promise<void>;
+        bridge:{running:boolean;lastError:string}
+      }>}}).plugins.plugins["x-feed-scraper"];
+      if(!instance)throw new Error("Plugin instance missing");
+      const vault=(app.vault.adapter as {getBasePath:()=>string}).getBasePath();
+      instance.settings.projectManifestPath=vault+"/mcp-project.json";
+      instance.settings.intervalMinutes=0;
+      await instance.saveSettings();
+      await instance.restart();
+      return {running:instance.bridge.running,error:instance.bridge.lastError};
+    });
+    expect(boot.running).toBe(true);
+    const sync=browser.$("//button[normalize-space()='Run research project']");
+    await sync.waitForDisplayed({timeout:30000});
+    await sync.click();
+    await browser.waitUntil(async()=>{
+      const panel=await browser.$(".xfs-panel").getText();
+      return panel.includes("Microscopy sample")&&panel.includes("Second experimental record");
+    },{timeout:30000,timeoutMsg:"MCP source did not produce research entities in the UI"});
+    const state=await browser.executeObsidian(async({app,obsidian})=>{
+      const file=app.vault.getAbstractFileByPath("References.md");
+      if(!(file instanceof obsidian.TFile))throw new Error("Missing References.md");
+      return {markdown:await app.vault.read(file),
+        notes:app.vault.getMarkdownFiles().map(note=>note.path)};
+    });
+    expect(state.markdown).toBe(original);
+    expect(state.notes.some(path=>path.startsWith("Discovery Engine/desktop-mcp/"))).toBe(true);
+  });
+
 });
