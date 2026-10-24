@@ -2,7 +2,7 @@ import {test} from "node:test";
 import assert from "node:assert/strict";
 import {resolve} from "node:path";
 import {buildProject,demoObservations} from "../packages/core/project-builder.ts";
-import {createDefaultRegistry} from "../packages/core/extensions.ts";
+import {createObsidianRegistry} from "../packages/integrations/obsidian-registry.ts";
 import {parseProject} from "../packages/core/project-config.ts";
 
 const id="p-sample-research-123abc89";
@@ -16,7 +16,7 @@ test("guided demo configuration produces executable generic project and no netwo
   assert.deepEqual(project.pipeline,["linked-resources"]);
   assert.deepEqual(project.policy.includeKeywords,["motion","research"]);
   assert.equal(project.outputs[0].adapter,"obsidian");
-  const registered=createDefaultRegistry();
+  const registered=createObsidianRegistry();
   assert.equal(registered.sources.has(project.sources[0].adapter),true);
   assert.equal(registered.processors.has(project.pipeline[0]),true);
   assert.equal(registered.outputs.has(project.outputs[0].adapter),true);
