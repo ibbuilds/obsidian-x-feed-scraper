@@ -12,7 +12,8 @@ export async function fetchPublicText(input:string, options:{
   async function step(inputUrl:string,remaining:number,requireHttps=false):Promise<{url:string;body:string;contentType:string}> {
     if(remaining<0) throw new Error("Too many redirects");
     const canonical=normalizeUrl(inputUrl);
-    if(isXUrl(canonical)||new URL(canonical).hostname==="t.co"){
+    const candidateHost=new URL(canonical).hostname.toLowerCase().replace(/\.$/,"");
+    if(isXUrl(canonical)||candidateHost==="t.co"||candidateHost.endsWith(".t.co")){
       throw new Error("Automated retrieval from X is not supported");
     }
     const parsed=new URL(canonical);
