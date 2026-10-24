@@ -40,7 +40,7 @@ try{
   const again=await timed("repeatMs",()=>reprocessProject(db,project,registry));
   if(again.reassessed!==count)throw Error("Repeated offline replay incomplete");
   const s=new KnowledgeStore(db);
-  let history:number,review:string|undefined,scoreCount:number,original:number;
+  let history,review,scoreCount,original;
   try{
     history=Number(s.db.prepare("SELECT COUNT(*) n FROM kb_assessment_history").get().n);
     scoreCount=Number(s.db.prepare("SELECT COUNT(*) n FROM kb_assessments WHERE project_id=? AND score=0")
