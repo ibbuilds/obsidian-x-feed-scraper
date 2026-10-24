@@ -1,5 +1,5 @@
 import {createHash,randomUUID} from "node:crypto";
-import {closeSync,existsSync,fsyncSync,linkSync,lstatSync,openSync,readFileSync,renameSync,unlinkSync,writeSync} from "node:fs";
+import {closeSync,existsSync,fsyncSync,linkSync,lstatSync,openSync,readFileSync,renameSync,unlinkSync,writeFileSync} from "node:fs";
 import {resolve,sep} from "node:path";
 import {Store} from "../storage/store.ts";
 import {isSymlink} from "./vault-safe.ts";
@@ -18,7 +18,9 @@ function managedPath(root:string,relative:string):string{
 function safeRead(path:string):string|undefined{
   if(isSymlink(path))throw new Error("Managed path is a symbolic link");
   try{
-    if(!lstatSync(path).isFile())throw new Error("Managed path must be a regular file");
+    const stat=lstatSync(path);
+    if(!stat.isFile())throw new Error("Managed path must be a regular file");
+    if(stat.size>5_000_000)throw new Error("Managed file too large for automatic updates");
     return readFileSync(path,"utf8");
   }catch(error){
     if((error as NodeJS.ErrnoException).code==="ENOENT")return undefined;
@@ -31,7 +33,7 @@ function createOnly(path:string,content:string):ManagedResult{
   let descriptor:number|undefined;
   try{
     descriptor=openSync(temp,"wx",0o600);
-    writeSync(descriptor,content);
+    writeFileSync(descriptor,content);
     fsyncSync(descriptor);
     closeSync(descriptor);descriptor=undefined;
     try{linkSync(temp,path);return "created";}
@@ -41,7 +43,7 @@ function createOnly(path:string,content:string):ManagedResult{
       if(!["EPERM","ENOTSUP","EOPNOTSUPP"].includes(code||""))throw error;
       try{
         const fd=openSync(path,"wx",0o600);
-        try{writeSync(fd,content);fsyncSync(fd);}
+        try{writeFileSync(fd,content);fsyncSync(fd);}
         finally{closeSync(fd);}
         return "created";
       }catch(inner){
@@ -79,7 +81,7 @@ export function writeManagedNote(store:Store,vault:string,relative:string,conten
   let fd:number|undefined;
   try{
     fd=openSync(temp,"wx",0o600);
-    writeSync(fd,content);
+    writeFileSync(fd,content);
     fsyncSync(fd);closeSync(fd);fd=undefined;
     const second=safeRead(path);
     if(second===undefined||digest(second)!==previous)return "conflict";
