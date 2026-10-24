@@ -23,6 +23,7 @@ function configStringArray(x:unknown,label:string,max=30):string[]{
 function options(source:JsonRecord):{
   command:string;args:string[];cwd?:string;tool:string;arguments:JsonRecord;
   cursorArgument:string;limitArgument:string;timeoutMs:number;passEnv:string[];
+  protocol:"auto"|"legacy"|"modern";
 }{
   const raw=record(source);
   const requested=checkedString(raw.command,"command",1000);
@@ -42,6 +43,10 @@ function options(source:JsonRecord):{
     !/^[A-Za-z_][A-Za-z0-9_]*$/.test(limitArgument)||cursorArgument===limitArgument){
     throw new Error("MCP pagination argument keys are invalid");
   }
+  const protocol=raw.protocol??"auto";
+  if(!["auto","legacy","modern"].includes(String(protocol))){
+    throw new Error("Invalid MCP protocol selection");
+  }
   const timeoutMs=raw.timeoutMs===undefined?30000:Number(raw.timeoutMs);
   if(!Number.isInteger(timeoutMs)||timeoutMs<1000||timeoutMs>120000){
     throw new Error("MCP timeout must be 1000–120000 milliseconds");
@@ -55,16 +60,17 @@ function options(source:JsonRecord):{
     throw new Error("MCP cursor and limit arguments are reserved");
   }
   return {command,args,cwd,tool,arguments:argumentsValue,cursorArgument,
-    limitArgument,timeoutMs,passEnv};
+    limitArgument,timeoutMs,passEnv,protocol:protocol as "auto"|"legacy"|"modern"};
 }
 /**
- * A deliberately small legacy MCP (2025-era) stdio client. The child process is
+ * A small stdio client with 2026 discovery and 2025 initialization fallback. The child is
  * explicitly user-configured and trusted. No shell, default inherited secrets,
  * HTTP transport or automatic downloads.
  */
 class StdioPeer {
   private child:ChildProcessWithoutNullStreams;
-  private pending=new Map<number,{resolve:(v:unknown)=>void;reject:(e:Error)=>void}>();
+  private pending=new Map<number,{resolve:(v:unknown)=>void;reject:(e:Error)=>void;
+    timer?:ReturnType<typeof setTimeout>}>();
   private nextId=1;
   private stdout="";
   private decoder=new StringDecoder("utf8");
@@ -118,6 +124,7 @@ class StdioPeer {
       const handler=this.pending.get(id);
       if(!handler)continue;
       this.pending.delete(id);
+      if(handler.timer)clearTimeout(handler.timer);
       if(response.error){
         handler.reject(new Error("MCP request failed: "+String(record(response.error).code??"protocol error")));
       }else handler.resolve(response.result);
@@ -126,15 +133,23 @@ class StdioPeer {
   private fail(error:Error):void{
     if(this.fatalError||this.stopping)return;
     this.fatalError=error;
-    for(const handler of this.pending.values())handler.reject(error);
+    for(const handler of this.pending.values()){
+      if(handler.timer)clearTimeout(handler.timer);
+      handler.reject(error);
+    }
     this.pending.clear();
     this.child.kill();
   }
-  async call(method:string,params?:ObjectValue):Promise<unknown>{
+  async call(method:string,params?:ObjectValue,probeTimeoutMs?:number):Promise<unknown>{
     if(this.fatalError)throw this.fatalError;
     const id=this.nextId++;
     return await new Promise<unknown>((resolve,reject)=>{
-      this.pending.set(id,{resolve,reject});
+      const timer=probeTimeoutMs?setTimeout(()=>{
+        this.pending.delete(id);
+        reject(new Error("MCP discovery probe timed out"));
+      },probeTimeoutMs):undefined;
+      timer?.unref();
+      this.pending.set(id,{resolve,reject,timer});
       const payload={jsonrpc:"2.0",id,method,...(params?{params}:{})};
       this.child.stdin.write(JSON.stringify(payload)+"\n",error=>{
         if(error)this.fail(new Error("MCP stdin write failed"));
@@ -153,7 +168,10 @@ class StdioPeer {
     this.cleanSignal();
     this.child.stdin.end();
     if(this.child.exitCode===null)this.child.kill();
-    for(const handler of this.pending.values())handler.reject(new Error("MCP request closed"));
+    for(const handler of this.pending.values()){
+      if(handler.timer)clearTimeout(handler.timer);
+      handler.reject(new Error("MCP request closed"));
+    }
     this.pending.clear();
   }
 }
@@ -192,19 +210,41 @@ export const mcpStdioSource:SourceAdapter={
     const config=options(source.config);
     const peer=new StdioPeer(config,signal);
     try{
-      const handshake=record(await peer.call("initialize",{
-        protocolVersion:"2025-11-25",
-        capabilities:{},clientInfo:{name:"discovery-engine",version:"0.5.0"}
-      }));
-      if(typeof handshake.protocolVersion!=="string"||
-        !/^202[45]-\d{2}-\d{2}$/.test(handshake.protocolVersion)){
-        throw new Error("MCP server did not negotiate a supported legacy protocol");
+      const metadata={
+        "io.modelcontextprotocol/protocolVersion":"2026-07-28",
+        "io.modelcontextprotocol/clientCapabilities":{},
+        "io.modelcontextprotocol/clientInfo":{name:"discovery-engine",version:"0.6.0"}
+      };
+      let modern=false;
+      if(config.protocol!=="legacy"){
+        try{
+          const discovery=record(await peer.call("server/discover",
+            {_meta:metadata},Math.min(2500,config.timeoutMs)));
+          const versions=discovery.supportedVersions;
+          modern=Array.isArray(versions)&&versions.includes("2026-07-28");
+        }catch{
+          // Legacy stdio servers may reject or ignore pre-initialize discovery.
+          if(config.protocol==="modern")throw new Error("MCP server did not support modern discovery");
+        }
       }
-      peer.notify("notifications/initialized");
+      if(!modern){
+        if(config.protocol==="modern")throw new Error("MCP server lacks protocol 2026-07-28");
+        const handshake=record(await peer.call("initialize",{
+          protocolVersion:"2025-11-25",
+          capabilities:{},clientInfo:{name:"discovery-engine",version:"0.6.0"}
+        }));
+        if(typeof handshake.protocolVersion!=="string"||
+          !/^202[45]-\d{2}-\d{2}$/.test(handshake.protocolVersion)){
+          throw new Error("MCP server did not negotiate a supported legacy protocol");
+        }
+        peer.notify("notifications/initialized");
+      }
+      const request=(method:string,params?:ObjectValue)=>
+        peer.call(method,modern?{...(params||{}),_meta:metadata}:params);
       let found=false,token:unknown=undefined;
       const known=new Set<string>();
       for(let pages=0;pages<10;pages++){
-        const response=record(await peer.call("tools/list",token?{cursor:token}:undefined));
+        const response=record(await request("tools/list",token?{cursor:token}:undefined));
         if(!Array.isArray(response.tools)||response.tools.length>1000){
           throw new Error("MCP tools/list returned an invalid tool collection");
         }
@@ -221,7 +261,7 @@ export const mcpStdioSource:SourceAdapter={
       if(!found)throw new Error("Configured MCP source tool is not exposed by this server");
       const args:ObjectValue={...config.arguments,[config.limitArgument]:limit};
       if(cursor!==undefined)args[config.cursorArgument]=cursor;
-      const response=await peer.call("tools/call",{name:config.tool,arguments:args});
+      const response=await request("tools/call",{name:config.tool,arguments:args});
       return parseToolResponse(response,limit);
     }finally{peer.close();}
   }
