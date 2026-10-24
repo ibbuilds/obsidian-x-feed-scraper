@@ -26,15 +26,24 @@ const entity={key:"record:known-1",type:"web-resource",title:"React UI motion co
   evidence:[{signal:"observed-url",detail:"Resource listed by authorized source"}]};
 const expected=keyword.assess(context,observation,entity);
 if(!expected||expected.category!=="motion"||expected.score!==65)throw Error("Unexpected baseline assessment: "+JSON.stringify(expected));
-const start=performance.now();
-for(let i=0;i<count;i++){
-  const actual=keyword.assess(context,observation,entity);
-  if(actual.category!==expected.category||actual.score!==expected.score||
-    actual.confidence!==expected.confidence||actual.reasons.join("|")!==expected.reasons.join("|")){
-    throw Error("Assessment drift at iteration "+i);
+const evaluateMany=(size)=>{
+  for(let i=0;i<size;i++){
+    const actual=keyword.assess(context,observation,entity);
+    if(actual.category!==expected.category||actual.score!==expected.score||
+      actual.confidence!==expected.confidence||actual.reasons.join("|")!==expected.reasons.join("|")){
+      throw Error("Assessment drift at iteration "+i);
+    }
   }
+};
+evaluateMany(3000);
+const samples=[];
+for(let repetition=0;repetition<3;repetition++){
+  const start=performance.now();
+  evaluateMany(count);
+  samples.push(performance.now()-start);
 }
-const ms=Math.round((performance.now()-start)*100)/100;
+samples.sort((a,b)=>a-b);
+const ms=Math.round(samples[1]*100)/100;
 // In-place changes to a mutable policy on the same signal must be observed.
 project.policy.includeKeywords[0]="never-seen-motion";
 const changed=keyword.assess(context,observation,entity);
