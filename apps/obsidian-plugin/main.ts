@@ -345,6 +345,38 @@ class SourceView extends ItemView {
             ).open());
           }
         }
+        const monitor=generic.createEl("details");
+        const [alerts,changes]=await Promise.all([
+          this.plugin.call("/project/alerts?project="+encodeURIComponent(active)+
+            "&limit=30") as Promise<Array<{id:number;entityKey:string;ruleId:string;
+              explanation:string;detectedAt:string;path:string;before?:unknown;after?:unknown}>>,
+          this.plugin.call("/project/changes?project="+encodeURIComponent(active)+
+            "&limit=40") as Promise<Array<{id:number;entityKey:string;path:string;
+              kind:string;observedAt:string;before?:unknown;after?:unknown}>>
+        ]);
+        monitor.createEl("summary",{text:"Monitoring: "+alerts.length+
+          " recent alerts · "+changes.length+" recent changes"});
+        if(alerts.length){
+          monitor.createEl("h5",{text:"Matched monitoring rules"});
+          for(const alert of alerts){
+            const item=monitor.createDiv({cls:"xfs-card"});
+            item.createEl("p",{text:alert.ruleId+" · "+alert.entityKey});
+            item.createEl("p",{cls:"xfs-meta",text:alert.detectedAt+" · "+alert.explanation});
+            item.createEl("p",{text:alert.path+" · "+
+              JSON.stringify(alert.before).slice(0,120)+" → "+
+              JSON.stringify(alert.after).slice(0,120)});
+          }
+        }
+        if(changes.length){
+          monitor.createEl("h5",{text:"Change history"});
+          for(const change of changes.slice(0,20)){
+            monitor.createEl("p",{cls:"xfs-meta",text:change.observedAt+" · "+
+              change.entityKey+" · "+change.kind+" · "+change.path+" · "+
+              JSON.stringify(change.before).slice(0,120)+" → "+
+              JSON.stringify(change.after).slice(0,120)});
+          }
+        }else monitor.createEl("p",{text:"No changes recorded yet. "+
+          "Snapshot sources recheck the same record identities on subsequent collections."});
         const runs=await this.plugin.call("/project/runs?project="+
           encodeURIComponent(active)) as Array<{connection_id:string;status:string;
           started_at:string;observations:number;new_entities:number;error?:string}>;
