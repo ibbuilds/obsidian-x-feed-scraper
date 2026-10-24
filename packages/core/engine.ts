@@ -159,9 +159,14 @@ export async function reprocessProject(dbPath:string,project:ProjectDefinition,r
   try{
     store=new KnowledgeStore(dbPath);
     store.saveProject(project);
+    // A project may contain hundreds of thousands of persisted entities.
+    // Iterate rows incrementally instead of materializing the whole table in JS.
+    // Reprocessing changes only assessments, not the entity rows being scanned.
     const entities=store.db.prepare(
       "SELECT entity_key,type,title,url,attributes_json FROM kb_entities WHERE project_id=?"
-    ).all(project.id) as Array<{entity_key:string;type:string;title:string;url:string|null;attributes_json:string}>;
+    ).iterate(project.id) as IterableIterator<{
+      entity_key:string;type:string;title:string;url:string|null;attributes_json:string
+    }>;
     const observationsForEntity=store.db.prepare(
       "SELECT o.connection_id,o.item_id,o.type,o.title,o.text,o.url,o.attributes_json,o.media_json,o.occurred_at,"+
       "o.observation_json AS current_observation_json,m.observation_json AS mention_observation_json,"+
