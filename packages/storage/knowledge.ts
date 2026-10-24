@@ -247,6 +247,42 @@ export class KnowledgeStore extends Store {
     ).get(projectId,key) as Row|undefined;
     return rows?asKnowledge(rows):undefined;
   }
+  entityEvidence(projectId:string,key:string):{
+    entity:KnowledgeEntity;mentions:Array<Record<string,unknown>>;
+    reviews:Array<Record<string,unknown>>;assessments:Array<Record<string,unknown>>
+  }|undefined{
+    const entity=this.getEntity(projectId,key);
+    if(!entity)return undefined;
+    const mentions=(this.db.prepare(
+      "SELECT m.connection_id,m.item_id,o.type,o.title,o.url,o.occurred_at,"+
+      "m.evidence_json,o.first_seen,o.last_seen "+
+      "FROM kb_mentions m JOIN kb_observations o ON "+
+      "o.project_id=m.project_id AND o.connection_id=m.connection_id AND o.item_id=m.item_id "+
+      "WHERE m.project_id=? AND m.entity_key=? "+
+      "ORDER BY o.last_seen DESC LIMIT 50"
+    ).all(projectId,key) as Row[]).map(row=>({
+      connectionId:row.connection_id,itemId:row.item_id,type:row.type,
+      title:row.title,url:row.url,occurredAt:row.occurred_at,
+      firstSeen:row.first_seen,lastSeen:row.last_seen,
+      evidence:json(row.evidence_json,[])
+    }));
+    const reviews=(this.db.prepare(
+      "SELECT decision,reason,reviewed_at FROM kb_reviews WHERE project_id=? "+
+      "AND entity_key=? ORDER BY id DESC LIMIT 30"
+    ).all(projectId,key) as Row[]).map(row=>({
+      decision:row.decision,reason:row.reason,date:row.reviewed_at
+    }));
+    const assessments=(this.db.prepare(
+      "SELECT category,score,confidence,reasons_json,evaluator_id,recorded_at "+
+      "FROM kb_assessment_history WHERE project_id=? AND entity_key=? "+
+      "ORDER BY id DESC LIMIT 30"
+    ).all(projectId,key) as Row[]).map(row=>({
+      category:row.category,score:row.score,confidence:row.confidence,
+      reasons:json(row.reasons_json,[]),evaluatorId:row.evaluator_id,
+      date:row.recorded_at
+    }));
+    return {entity,mentions,reviews,assessments};
+  }
   listObservations(projectId:string,limit=100):Row[]{
     return this.db.prepare(
       "SELECT connection_id,item_id,type,title,text,url,occurred_at,first_seen,last_seen "+
