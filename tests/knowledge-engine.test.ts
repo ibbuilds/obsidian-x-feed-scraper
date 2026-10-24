@@ -260,3 +260,44 @@ test("type collisions abort the page without corrupting previously committed ent
   store.close();
  }finally{rmSync(root,{recursive:true,force:true});}
 });
+
+test("evaluation provenance records the evaluator, changed scores and avoids duplicate history",async()=>{
+ const root=mkdtempSync(join(tmpdir(),"discovery-assessment-history-"));
+ const db=join(root,"knowledge.db");
+ try{
+  const project=demo("frontend"),extension=createDefaultRegistry();
+  const first=await runProject(db,project,extension);
+  assert.equal(first.success,true);
+  const store=new KnowledgeStore(db),key="https://github.com/example/motion-kit";
+  const initial=store.db.prepare(
+    "SELECT evaluator_id,score FROM kb_assessments WHERE project_id=? AND entity_key=?"
+  ).get(project.id,key) as {evaluator_id:string;score:number};
+  assert.equal(initial.evaluator_id,"keyword","The evaluator is not the source adapter");
+  const originalHistory=store.db.prepare(
+    "SELECT COUNT(*) n FROM kb_assessment_history WHERE project_id=? AND entity_key=?"
+  ).get(project.id,key) as {n:number};
+  assert.ok(originalHistory.n>=1);
+  store.close();
+  project.policy.includeKeywords=["no-term-will-match-any-source"];
+  const change=await reprocessProject(db,project,extension);
+  assert.ok(change.reassessed>0);
+  const reopened=new KnowledgeStore(db);
+  const updated=reopened.getEntity(project.id,key)!;
+  assert.ok(updated.score<initial.score);
+  const entries=reopened.db.prepare(
+    "SELECT evaluator_id,score FROM kb_assessment_history WHERE project_id=? AND entity_key=? ORDER BY id"
+  ).all(project.id,key) as Array<{evaluator_id:string;score:number}>;
+  assert.ok(entries.length>originalHistory.n);
+  assert.equal(entries.at(-1)?.evaluator_id,"keyword");
+  assert.equal(entries.at(-1)?.score,updated.score);
+  reopened.close();
+  const repeated=await reprocessProject(db,project,extension);
+  assert.ok(repeated.reassessed>0);
+  const same=new KnowledgeStore(db);
+  const row=same.db.prepare(
+    "SELECT COUNT(*) n FROM kb_assessment_history WHERE project_id=? AND entity_key=?"
+  ).get(project.id,key) as {n:number};
+  assert.equal(row.n,entries.length,"Idempotent rescoring must not flood the history");
+  same.close();
+ }finally{rmSync(root,{recursive:true,force:true});}
+});
