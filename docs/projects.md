@@ -84,3 +84,7 @@ Existing legacy endpoints remain for backward compatibility. **No project API re
 The engine commits each processed source page and its next cursor in one transaction. A failed page leaves its cursor unchanged; a restarted run resumes. Data and reports for other sources remain intact. A source run reports failures instead of claiming complete collection, and limit caps prevent endless pagination.
 
 A connector can only fetch content it has permission and technical ability to access. Do not store login credentials in synced project manifests. Extensions run trusted local code with normal OS permissions; they are not sandboxed.
+
+## Guided creation from Obsidian
+
+End users can create a complete, schema-validated project without writing a JSON manifest. The **Create research project** wizard supports a built-in offline demo, public RSS, local JSON and trusted MCP stdio, with project-specific interest terms, extraction mode, optional public metadata and schedule. The resulting manifest is written to a private per-vault local data directory; its original source connection configuration remains immutable to protect persisted cursors. Developers can still create advanced projects using JSON and the SDK. See `docs/first-run.md`.

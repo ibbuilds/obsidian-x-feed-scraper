@@ -40,6 +40,26 @@ test("packaged collector serves autonomous generic projects through the authenti
       decision:"approved",reason:"Manually verified project"})
   });
   assert.equal(review.status,200,await review.text().catch(()=>""));
+  const evidenceResponse=await fetch(rootUrl+
+    "/project/entity?project=frontend-discovery&key="+encodeURIComponent(selected.key),
+    {headers:auth});
+  assert.equal(evidenceResponse.status,200);
+  const evidence=await evidenceResponse.json() as {
+    entity:{key:string};mentions:Array<{itemId:string;evidence:unknown[]}>;
+    reviews:Array<{decision:string;reason:string}>;assessments:Array<{score:number;evaluatorId:string}>;
+  };
+  assert.equal(evidence.entity.key,selected.key);
+  assert.equal(evidence.mentions.length,2);
+  assert.ok(evidence.mentions.every(m=>m.evidence.length>0));
+  assert.equal(evidence.reviews[0]?.decision,"approved");
+  assert.ok(evidence.assessments.length>0);
+  assert.equal(evidence.assessments[0]?.evaluatorId,"keyword");
+  const missingProof=await fetch(rootUrl+
+    "/project/entity?project=frontend-discovery&key=does-not-exist",{headers:auth});
+  assert.equal(missingProof.status,404);
+  const invalidProof=await fetch(rootUrl+
+    "/project/entity?project=frontend-discovery",{headers:auth});
+  assert.equal(invalidProof.status,400);
   const confirmed=await (await fetch(rootUrl+"/project/entities?project=frontend-discovery",{headers:auth}))
     .json() as Array<{key:string;review:string}>;
   assert.equal(confirmed.find(x=>x.key===selected.key)?.review,"approved");

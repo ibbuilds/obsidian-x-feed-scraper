@@ -103,9 +103,25 @@ export class LocalBridge {
     this.child=undefined;this.tokenValue="";this.portValue=0;
     if(child&&child.exitCode===null){
       const ended=new Promise<void>(resolve=>{
-        child.once("exit",()=>resolve());
-        const timeout=setTimeout(resolve,2000);
-        timeout.unref();
+        let finished=false;
+        const onExit=()=>{
+          if(finished)return;
+          finished=true;
+          clearTimeout(timeout);
+          child.removeListener("exit",onExit);
+          resolve();
+        };
+        const timeout=setTimeout(()=>{
+          // Avoid running two collectors after a hung graceful shutdown.
+          if(child.exitCode===null)child.kill("SIGKILL");
+          onExit();
+        },2000);
+        // In an Electron/Obsidian renderer setTimeout returns a DOM numeric ID,
+        // not Node's Timeout object. Calling .unref() unconditionally crashes
+        // collector restart even though Node-based tests pass.
+        if(typeof timeout==="object"&&"unref" in timeout&&
+          typeof timeout.unref==="function")timeout.unref();
+        child.once("exit",onExit);
       });
       child.kill("SIGTERM");
       await ended;

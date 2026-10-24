@@ -3,12 +3,16 @@ import {
   WorkspaceLeaf,requestUrl
 } from "obsidian";
 import {createHash,randomBytes} from "node:crypto";
+import {existsSync,mkdirSync,readdirSync,readFileSync,writeFileSync,lstatSync} from "node:fs";
 import {homedir} from "node:os";
 import {libraryContains,appendApprovedReference} from "./library.ts";
-import {join} from "node:path";
+import {join,resolve} from "node:path";
 import {LocalBridge} from "./bridge.ts";
 import {prepareBundledAssets} from "./embedded.ts";
 import {normalizeUrl} from "../../packages/core/url.ts";
+import {demoObservations} from "../../packages/core/project-builder.ts";
+import {ProjectSetupModal} from "./setup.ts";
+import type {ProjectDefinition} from "../../packages/sdk/contracts.ts";
 
 const VIEW="x-feed-scraper-view";
 interface SettingsData {
@@ -181,6 +185,26 @@ class SourceView extends ItemView {
     const root=this.contentEl;
     root.empty();root.addClass("xfs-panel");
     root.createEl("h3",{text:"Discovery Engine"});
+    button(root,"Create research project",()=>this.plugin.openProjectSetup());
+    let saved:Array<{path:string;id:string;name:string}>=[];
+    try{saved=this.plugin.installedProjects();}
+    catch(error){
+      root.createEl("p",{cls:"xfs-warning",text:
+        "Saved project list is unavailable: "+asError(error)});
+    }
+    if(saved.length>1||saved.some(item=>item.path!==this.plugin.settings.projectManifestPath)){
+      const selector=root.createEl("select",{attr:{"aria-label":"Choose saved research project"}});
+      for(const project of saved){
+        const item=selector.createEl("option",{text:project.name,attr:{value:project.path}});
+        item.value=project.path;
+      }
+      selector.value=this.plugin.settings.projectManifestPath;
+      button(root,"Switch project",()=>{
+        void this.plugin.activateSavedProject(selector.value)
+          .then(()=>this.draw()).catch(error=>new Notice(asError(error)));
+      });
+    }
+
     if(!this.plugin.bridge.running){
       root.createEl("p",{text:this.plugin.bridge.lastError||
         "The local collector is not running. Node.js 22.16+ and the complete plugin ZIP are required."});
@@ -221,6 +245,12 @@ class SourceView extends ItemView {
       generic.createEl("h4",{text:"Knowledge projects"});
       const active=stats.activeProjectId;
       const projects=await this.plugin.call("/projects") as KnowledgeProject[];
+      if(!this.plugin.settings.projectManifestPath){
+        generic.createEl("p",{text:"No research project configured yet. Create one to start "+
+          "collecting, evaluating and storing information automatically."});
+        button(generic,"Try included offline demo",()=>this.plugin.openProjectSetup());
+      }
+
       for(const item of projects.slice(0,20)){
         generic.createEl("p",{cls:"xfs-meta",text:item.name+" · "+
           item.entities+" entities · "+item.observations+" observations"+
@@ -262,6 +292,49 @@ class SourceView extends ItemView {
           const details=card.createEl("details");
           details.createEl("summary",{text:"Structured attributes"});
           details.createEl("p",{text:JSON.stringify(record.attributes).slice(0,1600)});
+          const evidencePanel=card.createEl("details");
+          evidencePanel.createEl("summary",{text:"Sources, evidence and review history"});
+          let loaded=false;
+          evidencePanel.addEventListener("toggle",()=>{
+            if(!evidencePanel.open||loaded)return;
+            loaded=true;
+            const content=evidencePanel.createDiv();
+            content.createEl("p",{text:"Loading source evidence..."});
+            void this.plugin.call("/project/entity?project="+encodeURIComponent(active)+
+              "&key="+encodeURIComponent(record.key)).then(raw=>{
+              content.empty();
+              const proof=raw as {
+                mentions:Array<{connectionId:string;itemId:string;title?:string;
+                  url?:string;evidence?:Array<{signal:string;detail:string}>}>;
+                reviews:Array<{decision:string;reason:string;date:string}>;
+                assessments:Array<{score:number;confidence:number;evaluatorId:string;date:string}>;
+              };
+              content.createEl("h6",{text:"Original observations ("+proof.mentions.length+")"});
+              for(const observation of proof.mentions.slice(0,25)){
+                const item=content.createEl("p",{text:observation.connectionId+
+                  " · "+(observation.title||observation.itemId)});
+                if(observation.url)external(item,"View original",observation.url);
+                for(const line of observation.evidence||[]){
+                  content.createEl("p",{cls:"xfs-meta",text:
+                    line.signal+" · "+line.detail});
+                }
+              }
+              content.createEl("h6",{text:"Assessment changes ("+proof.assessments.length+")"});
+              for(const evaluation of proof.assessments.slice(0,10)){
+                content.createEl("p",{cls:"xfs-meta",text:evaluation.date+
+                  " · "+evaluation.evaluatorId+" · "+evaluation.score+
+                  "/100 · confidence "+Math.round(evaluation.confidence*100)+"%"});
+              }
+              content.createEl("h6",{text:"Human review history"});
+              for(const review of proof.reviews.slice(0,10)){
+                content.createEl("p",{cls:"xfs-meta",text:review.date+" · "+
+                  review.decision+" · "+review.reason});
+              }
+            }).catch(error=>{
+              loaded=false;content.empty();
+              content.createEl("p",{text:"Evidence unavailable: "+asError(error)});
+            });
+          });
           const choices=card.createDiv({cls:"xfs-actions"});
           for(const [decision,label] of [
             ["approved","Approve"],["rejected","Reject"],["pending","Reopen"]
@@ -287,12 +360,15 @@ class SourceView extends ItemView {
         generic.createEl("p",{cls:"xfs-muted",text:
           "Choose a research project manifest under Settings, or use the independent project CLI."});
       }
-      generic.createEl("h4",{text:"X Feed Scraper (legacy curation)"});
-      const warning=root.createDiv({cls:"xfs-warning"});
+      const legacyPanel=generic.createEl("details");
+      legacyPanel.open=!active;
+      legacyPanel.createEl("summary",{text:"Legacy X Feed Scraper tools"});
+      const legacy=legacyPanel.createDiv({cls:"xfs-legacy"});
+      const warning=legacy.createDiv({cls:"xfs-warning"});
       warning.createEl("strong",{text:"X For You: not connected."});
       warning.createEl("p",{text:"The authenticated personalized X For You feed has no verified authorized adapter. "+
         "Legacy RSS and manual imports are separate sources, never labeled as your For You timeline."});
-      const actions=root.createDiv({cls:"xfs-actions"});
+      const actions=legacy.createDiv({cls:"xfs-actions"});
       button(actions,"Refresh",()=>{void this.draw();});
       button(actions,"Diagnostics",()=>{
         void this.plugin.call("/diagnostics").then(result=>{
@@ -320,8 +396,8 @@ class SourceView extends ItemView {
       button(actions,"Open Bases",()=>{
         void this.plugin.app.workspace.openLinkText("X Feed Scraper/Sources.base","",false);
       });
-      root.createEl("h4",{text:"Curated sources"});
-      const controls=root.createDiv({cls:"xfs-controls"});
+      legacy.createEl("h4",{text:"Curated sources"});
+      const controls=legacy.createDiv({cls:"xfs-controls"});
       const search=controls.createEl("input",{attr:{placeholder:"Search title, URL or category",value:this.query}});
       search.value=this.query;
       const filter=controls.createEl("select");
@@ -346,9 +422,9 @@ class SourceView extends ItemView {
       button(pager,"Next",()=>{
         this.page++;void this.draw();
       }).disabled=sources.length<100;
-      if(!sources.length)root.createEl("p",{cls:"xfs-muted",text:"No sources match the filter."});
+      if(!sources.length)legacy.createEl("p",{cls:"xfs-muted",text:"No sources match the filter."});
       for(const source of sources){
-        const card=root.createDiv({cls:"xfs-card"});
+        const card=legacy.createDiv({cls:"xfs-card"});
         card.createEl("h5",{text:source.title||source.url});
         card.createEl("p",{cls:"xfs-meta",text:source.category+" · "+source.status+" · "+
           source.score+"/100 · confidence "+Math.round(source.confidence*100)+"% · "+source.access});
@@ -374,26 +450,26 @@ class SourceView extends ItemView {
             }).open());
         }
       }
-      const visualSection=root.createEl("details");
+      const visualSection=legacy.createEl("details");
       visualSection.createEl("summary",{text:"Visual-only references ("+visuals.length+")"});
       visualSection.createEl("p",{text:"No external project URL was found. Image links are kept only for human review."});
       for(const visual of visuals){
         const item=visualSection.createDiv();
         external(item,visual.author+" · "+visual.first_seen,visual.url);
       }
-      const errorSection=root.createEl("details");
+      const errorSection=legacy.createEl("details");
       errorSection.createEl("summary",{text:"Recent errors ("+recentErrors.length+")"});
       if(!recentErrors.length)errorSection.createEl("p",{text:"No recent errors recorded."});
       for(const error of recentErrors){
         errorSection.createEl("p",{cls:"xfs-meta",text:error.occurred_at+" · "+error.message});
       }
-      const log=root.createEl("details");
+      const log=legacy.createEl("details");
       log.createEl("summary",{text:"Run history"});
       for(const run of history.slice(0,15)){
         log.createEl("p",{cls:"xfs-meta",text:run.started_at+" · "+run.status+" · "+
           run.posts_seen+" posts · "+run.sources_new+" new · "+run.duplicates+" duplicates"});
       }
-      const manual=root.createEl("details");
+      const manual=legacy.createEl("details");
       manual.createEl("summary",{text:"Manual X post / account suggestions"});
       manual.createEl("p",{text:"These are links for human action only; no likes or follows are automated."});
       for(const post of recs.posts.slice(0,20)){
@@ -449,6 +525,10 @@ class ScraperSettings extends PluginSettingTab {
       .addText(t=>t.setValue(this.plugin.settings.nodeExecutable).onChange(async value=>{
         this.plugin.settings.nodeExecutable=value.trim()||"node";await this.plugin.saveSettings();
       }));
+    new Setting(root).setName("Create project without editing JSON")
+      .setDesc("Guided setup for an offline demo, RSS feed, local JSON file or trusted MCP tool.")
+      .addButton(button=>button.setButtonText("Create research project")
+        .onClick(()=>this.plugin.openProjectSetup()));
     new Setting(root).setName("Research project manifest")
       .setDesc("Absolute path to a project JSON file. The generic engine uses its own sources, "+
         "processors, evaluator and outputs; no X or Obsidian dependency is required.")
@@ -546,6 +626,8 @@ export default class ScraperPlugin extends Plugin {
     this.addCommand({id:"sync-authorized-source",name:"Sync authorized source",callback:()=>{
       void this.call("/sync","POST").then(()=>this.redraw()).catch(e=>new Notice(asError(e)));
     }});
+    this.addCommand({id:"new-research-project",name:"Create research project",callback:()=>
+      this.openProjectSetup()});
     this.addSettingTab(new ScraperSettings(this));
     if(this.settings.autoStart)void this.start().then(()=>this.redraw()).catch(()=>this.redraw());
   }
@@ -574,6 +656,96 @@ export default class ScraperPlugin extends Plugin {
     }
   }
   async saveSettings():Promise<void>{await this.saveData(this.settings);}
+  openProjectSetup():void{
+    new ProjectSetupModal(this,()=>{void this.redraw();}).open();
+  }
+  private localDataDirectory():string{
+    const {vault}=this.paths();
+    return join(homedir(),".x-feed-scraper",
+      createHash("sha256").update(vault).digest("hex").slice(0,20));
+  }
+  projectDemoPath(id:string):string{
+    if(!/^p-[a-z0-9-]+-[a-f0-9]{8}$/.test(id)){
+      throw new Error("Invalid research project identifier");
+    }
+    return join(this.localDataDirectory(),"projects",id+"-demo.json");
+  }
+  installedProjects():Array<{path:string;id:string;name:string}>{
+    const directory=join(this.localDataDirectory(),"projects");
+    if(!existsSync(directory))return [];
+    if(lstatSync(directory).isSymbolicLink())throw new Error("Unsafe projects directory");
+    const entries:Array<{path:string;id:string;name:string}>=[];
+    for(const file of readdirSync(directory)){
+      if(!/^p-[a-z0-9-]+-[a-f0-9]{8}\.json$/.test(file))continue;
+      const path=join(directory,file);
+      if(lstatSync(path).isSymbolicLink()||!lstatSync(path).isFile())continue;
+      try{
+        const parsed=JSON.parse(readFileSync(path,"utf8")) as {id?:unknown;name?:unknown};
+        if(typeof parsed.name==="string"&&parsed.name.length<=200&&
+          parsed.id===file.slice(0,-5))entries.push({path,id:parsed.id,name:parsed.name});
+      }catch{/* Ignore malformed project settings without altering user files. */}
+    }
+    return entries;
+  }
+  async activateSavedProject(path:string):Promise<void>{
+    if(!this.installedProjects().some(item=>item.path===resolve(path))){
+      throw new Error("Choose a previously created project");
+    }
+    this.settings.projectManifestPath=resolve(path);
+    this.settings.extensionPath="";
+    await this.saveSettings();
+    await this.restart();
+  }
+  async installResearchProject(project:ProjectDefinition,options:{
+    demo:boolean;intervalMinutes:number
+  }):Promise<void>{
+    if(!Number.isInteger(options.intervalMinutes)||options.intervalMinutes<0||
+      options.intervalMinutes>1440||
+      (options.intervalMinutes!==0&&options.intervalMinutes<15)){
+      throw new Error("Invalid collection interval");
+    }
+    if(!/^p-[a-z0-9-]+-[a-f0-9]{8}$/.test(project.id)){
+      throw new Error("Invalid new project identifier");
+    }
+    const directory=join(this.localDataDirectory(),"projects");
+    mkdirSync(directory,{recursive:true,mode:0o700});
+    if(lstatSync(directory).isSymbolicLink())throw new Error("Unsafe projects directory");
+    if(options.demo){
+      const filename=this.projectDemoPath(project.id);
+      if(project.sources[0]?.config.path!==filename){
+        throw new Error("Demo source path mismatch");
+      }
+      writeFileSync(filename,JSON.stringify(demoObservations(),null,2)+"\n",{
+        flag:"wx",mode:0o600
+      });
+    }
+    const manifest=join(directory,project.id+".json");
+    writeFileSync(manifest,JSON.stringify(project,null,2)+"\n",{
+      flag:"wx",mode:0o600
+    });
+    this.settings.projectManifestPath=manifest;
+    this.settings.intervalMinutes=options.intervalMinutes;
+    // A new built-in project never implicitly inherits executable third-party extensions.
+    this.settings.extensionPath="";
+    await this.saveSettings();
+    await this.restart();
+    // Configured schedules collect immediately on startup; avoid racing a second
+    // manual /project/sync against that first asynchronous collection.
+    if(options.intervalMinutes>0){
+      await this.redraw();
+      return;
+    }
+    const reply=await this.call("/project/sync","POST") as {
+      result?:{success?:boolean;runs?:Array<{error?:string}>}
+    };
+    if(reply.result?.success!==true){
+      const errors=reply.result?.runs?.map(item=>item.error).filter(Boolean)||[];
+      throw new Error("Project saved, but first collection failed: "+
+        errors.slice(0,2).join("; "));
+    }
+    this.notifyExport(reply);
+    await this.redraw();
+  }
   private paths():{dir:string;vault:string}{
     const adapter=this.app.vault.adapter;
     if(!(adapter instanceof FileSystemAdapter))throw new Error("Desktop filesystem vault required");
@@ -592,8 +764,7 @@ export default class ScraperPlugin extends Plugin {
         throw new Error("Use an authorized public RSS URL without credentials");
       }
     }
-    const localData=join(homedir(),".x-feed-scraper",
-      createHash("sha256").update(vault).digest("hex").slice(0,20));
+    const localData=this.localDataDirectory();
     const embedded=prepareBundledAssets(localData);
     await this.bridge.start({
       executable:this.settings.nodeExecutable,

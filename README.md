@@ -2,7 +2,7 @@
 
 **Open-source, local-first engine that turns observations from user-authorized sources into structured, evidence-linked, reviewable knowledge.** It is not a news summarizer. Sources, extractors, evaluators and outputs are interchangeable.
 
-Version **0.6.0 beta**. The Obsidian plugin retains its original ID `x-feed-scraper`, repository URL and ZIP filename to protect existing installations.
+Version **0.7.0 beta**. The Obsidian plugin retains its original ID `x-feed-scraper`, repository URL and ZIP filename to protect existing installations.
 
 ## What it does
 
@@ -13,6 +13,16 @@ Version **0.6.0 beta**. The Obsidian plugin retains its original ID `x-feed-scra
 5. Outputs deliver queryable JSON or safe Markdown/Bases in Obsidian. Existing edited notes remain untouched.
 
 **Not supported:** the real account-personalized X **For You** feed. No provider-authorized integration has been verified. RSS, manually supplied posts and other connectors are not substitutes masquerading as For You. See `docs/x-access.md` and issue #2.
+
+## First run in Obsidian — no code or JSON required
+
+1. Install the latest three-file ZIP and open **Discovery Engine** in the sidebar.
+2. Click **Create research project**, leave **Built-in offline demo** selected, and press **Create & run project**.
+3. The plugin imports synthetic observations, deduplicates a shared resource, evaluates it and generates a separate Obsidian knowledge Base/Markdown notes. Open **Sources, evidence and review history** on a card to see why the resource was included.
+4. To collect actual data, create another project using **Public RSS / Atom**, **Local JSON observations** or an explicit **trusted local MCP server**. Configure topics and interval from the same wizard; you do not need to edit a JSON manifest.
+5. Projects created by the wizard are saved under the per-vault local data directory, outside your synced vault. Use **Switch project** to activate another one; prior SQLite records remain isolated.
+
+For a full step-by-step explanation, see [First run](docs/first-run.md). External custom project manifests and the SDK remain supported for developers.
 
 ## Quick start: generic engine, no Obsidian required
 
@@ -51,11 +61,11 @@ All example inputs are synthetic. Project manifests define source adapters, an o
 ## Install in Obsidian Desktop
 
 1. Install Obsidian Desktop **1.9.2+** and Node.js **22.16+**.
-2. Download the [v0.6.0-beta.1 release](https://github.com/ibbuilds/obsidian-x-feed-scraper/releases/tag/v0.6.0-beta.1).
+2. Download the [v0.7.0-beta.1 release](https://github.com/ibbuilds/obsidian-x-feed-scraper/releases/tag/v0.7.0-beta.1).
 3. Extract `main.js`, `manifest.json` and `styles.css` into `<vault>/.obsidian/plugins/x-feed-scraper/`. Keep this directory: the plugin ID is intentionally backward compatible.
 4. Enable **Bases** under Core plugins, then **Discovery Engine** under Community plugins.
-5. Enter an absolute **Research project manifest** path in plugin Settings (optionally a trusted local `.cjs` extension file); choose **Restart collector**.
-6. Open the sidebar to run, search, review and export your project. The `obsidian` output uses `Discovery Engine/<project-id>/` in the vault.
+5. Click **Create research project** in the sidebar to use the guided setup (including an offline test), or supply an existing absolute **Research project manifest** in Settings for advanced use.
+6. Open the sidebar to run, inspect provenance, search, review and export your project. The `obsidian` output uses `Discovery Engine/<project-id>/` in the vault.
 7. Optionally set a schedule (minimum 15 minutes for a generic project). Scheduled sources collect immediately after service startup, respect Pause and then run on their interval while the collector is active; the CLI can also operate without Obsidian.
 
 The standard three-file package embeds a SHA-256 checked Node collector and profile. SQLite stays outside your synced vault in `~/.x-feed-scraper/<vault-hash>/library.db`. The local API uses a random in-memory bearer token and listens only on 127.0.0.1.
@@ -82,6 +92,6 @@ Collection is bounded by authorized source permissions, rate limits, available r
 
 CI validates different domains, the external SDK example, migration, cursor recovery and safe exports, plus real Obsidian Desktop in an **isolated** vault. The user's personal vault and connected Obsidian MCP still require their own smoke test. Personalized X For You remains blocked pending an authorized connector.
 
-Documentation: `docs/projects.md`, `docs/sdk.md`, `docs/mcp-stdio.md`, `docs/architecture.md`, `docs/security.md`, `docs/migration-v0.5.md`, `docs/plugin-guide.md`, `docs/x-access.md` and `docs/acceptance-matrix.md`.
+Documentation: `docs/first-run.md`, `docs/projects.md`, `docs/sdk.md`, `docs/mcp-stdio.md`, `docs/architecture.md`, `docs/security.md`, `docs/migration-v0.5.md`, `docs/plugin-guide.md`, `docs/x-access.md` and `docs/acceptance-matrix.md`.
 
 Contributions are welcome under the MIT license. Never commit credentials or private user data.
