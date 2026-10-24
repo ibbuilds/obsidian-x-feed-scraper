@@ -11,5 +11,4 @@ Confidence is an independent coverage measure; poor evidence routes sources to n
 Neither a GitHub link nor a textual claim establishes an open-source license.
 
 Use review --decision approved, rejected or excellent --reason ... to record preferences.
-The optional enrichment step uses prior review signals as a bounded category-specific score
-adjustment. It does not train a model or alter anyone's X account.
+Metadata enrichment can be manually invoked or enabled for automatic permitted syncs. Automatic failures use persistent backoff and a three-attempt cap; the manual action can retry when needed. Prior decisions provide a bounded category-specific score adjustment. It does not train a model or alter anyone's X account.

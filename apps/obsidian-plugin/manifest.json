@@ -1,7 +1,7 @@
 {
   "id": "x-feed-scraper",
   "name": "X Feed Scraper",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "minAppVersion": "1.9.2",
   "description": "Discover, evaluate, and curate sources in your vault using a local research collector.",
   "author": "X Feed Scraper contributors",

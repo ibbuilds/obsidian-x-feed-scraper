@@ -6,13 +6,13 @@ The plugin creates a random session-only API token and starts its child collecto
 
 The plugin does not read browser cookies or sessions, send X passwords to ChatGPT, invoke unofficial X automation, generate likes/follows, collect private information remotely or transmit telemetry. The X For You feed remains blocked.
 
-SQLite stays outside the synced vault under the local home directory. Structured notes, Bases and reports are written inside the vault. Exported notes are create-only and existing modified notes are protected from overwriting. A user-approved reference can enter References.md only after a backup, duplicate check and atomic Obsidian Vault.process operation.
+SQLite stays outside the synced vault under the local home directory. Structured notes, Bases and reports are written inside the vault. Generated notes are written with tracked SHA-256 fingerprints. The exporter updates only files whose bytes still match the last generated version; unknown or manually edited files stay untouched with conflict paths reported. The exporter, source reviews, and ingestion share a process lock. A user-approved reference can enter References.md only after a backup, duplicate check and atomic Obsidian Vault.process operation.
 
 ## External input
 
 The RSS connector is opt-in and only supports user-selected public feeds. The network client validates each redirect, pins DNS resolution, rejects private/loopback/documentation IP ranges, verifies TLS, limits sizes/time, and blocks X hosts. XML DTDs and custom entity definitions are rejected; feed/post text is treated as untrusted data and is never executed.
 
-Optional public page metadata retrieval is user-initiated; it does not confirm that a site is free, open source, visually excellent, accessible or trustworthy.
+Optional public page metadata retrieval occurs only on a manual request or after the user explicitly enables automatic enrichment. Each automatic cycle examines up to 10 sources, with persisted cooldowns and at most 3 automatic retries per source; it does not confirm that a site is free, open source, visually excellent, accessible or trustworthy.
 
 ## Risks and operational requirements
 

@@ -17,20 +17,21 @@ jobs:
         with:
           node-version: '22.16.0'
       - run: npm ci --no-audit --no-fund
+      - run: npm audit --omit=dev --audit-level=high
       - run: npm run check
       - run: npm run package
       - run: npm test
       - name: Publish tested Obsidian plugin preview
         env:
           GH_TOKEN: ${{ github.token }}
-          TAG: v0.3.0-beta.1
+          TAG: v0.4.0-rc.1
         run: |
           if gh release view "$TAG" >/dev/null 2>&1; then
             echo "Preview release already exists; preserving its published asset."
           else
             gh release create "$TAG" dist/obsidian-x-feed-scraper.zip \
-              --title "X Feed Scraper for Obsidian v0.3.0 Preview" \
+              --title "X Feed Scraper for Obsidian v0.4.0 RC1" \
               --target "${{ github.event.workflow_run.head_sha }}" \
               --prerelease \
-              --notes "Obsidian desktop plugin with bundled local collector, RSS and manual imports, SQLite, source review and Bases. Not production verified in a user's vault. Personalized X For You access is not available."
+              --notes "Release candidate for local Obsidian discovery and curation. Includes three-file plugin, opt-in automatic metadata checks, durable SQLite, guarded Markdown sync, RSS and manual input, cross-platform CI and real Obsidian Desktop tests. Personalized X For You feed remains unverified and unavailable. The owner still needs to validate their own vault/MCP."
           fi

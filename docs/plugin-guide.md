@@ -4,7 +4,7 @@
 
 - Obsidian Desktop 1.9.2+ and Node.js 22.16+ are required. No cloud account, paid API or X authentication is necessary for supported connectors.
 - Download the successful GitHub Actions artifact named x-feed-scraper-obsidian from the CI workflow, then unpack the ZIP's three standard files (main.js, manifest.json, styles.css) into the vault plugin folder.
-- Enable the Bases core plugin and X Feed Scraper under Settings > Community plugins. Open the ribbon sidebar and allow the local collector to start.
+- Enable Bases under Settings > Core plugins, then enable X Feed Scraper under Settings > Community plugins. Open the ribbon sidebar and allow the local collector to start.
 - If Node.js is not found when Obsidian starts from a graphical launcher, configure its absolute executable path in the settings.
 - The service binds only a random local port. Its temporary bearer token is never saved in the vault. The standard Obsidian three-file installer is supported: the `main.js` bundle contains versioned and SHA-256-verified collector code and a default profile, extracted to `~/.x-feed-scraper/<vault-hash>/` without reaching out to any download server.
 
@@ -21,12 +21,12 @@ The post URL and text are **provided by the user**, not fetched from X. This is 
 
 1. Press Sync authorized source or import observations.
 2. Sources receive independent quality scores and evidence confidence. Low confidence is review-only and high score never means automatically approved.
-3. Optionally press Check public metadata to fetch titles/descriptions of up to 10 linked public pages, respecting the network restrictions.
-4. Search or filter the candidate list, inspect source/original post links and reasons, then Approve, Excellent or Reject with a required reason.
+3. For opt-in automatic scoring, enable Automatically analyze public source metadata in Settings and restart; each permitted sync enriches up to 10 public pages with bounded retries. Alternatively press Check public metadata for an explicit manual run.
+4. Search/filter/page through candidates, inspect source descriptions, licenses and reasons, then Approve, Excellent or Reject with a required reason.
 5. Open the generated Sources.base in Obsidian and query the same Markdown candidates through an existing Obsidian MCP.
 6. Explicitly press Add to References.md on an approved source. This operation checks for duplicates, saves a unique snapshot backup in X Feed Scraper/Backups, and appends using Obsidian Vault.process.
 
-The main References.md is not edited during synchronization or note export.
+The main References.md is not edited during synchronization or note export. Generated notes can be refreshed automatically only if their recorded SHA-256 matches the existing file; any personal edits are preserved and reported as named conflicts.
 
 ## On-device validation checklist
 
@@ -41,4 +41,4 @@ The main References.md is not edited during synchronization or note export.
 - [ ] The existing Obsidian MCP can find and read exported notes.
 - [ ] Windows/macOS file permissions and paths are verified if relevant.
 
-This list requires an actual Obsidian desktop test, not merely Node-based CI.
+CI already exercises the genuine Obsidian Desktop app in an isolated Linux vault. This checklist still requires validation on the owner's actual device, vault, Obsidian version and connected MCP.
