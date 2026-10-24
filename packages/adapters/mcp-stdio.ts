@@ -91,6 +91,8 @@ class StdioPeer {
     });
     this.abort=()=>this.fail(new Error("MCP collection aborted"));
     this.child.stdout.on("data",(buffer:Buffer)=>this.handleData(buffer));
+    this.child.stdout.on("error",()=>this.fail(new Error("MCP stdout transport failed")));
+    this.child.stdin.on("error",()=>this.fail(new Error("MCP stdin transport failed")));
     // Discard child stderr to avoid exposing connector credentials or blocking its pipe.
     this.child.stderr.on("data",()=>{});
     this.child.on("error",()=>this.fail(new Error("MCP process could not start")));
