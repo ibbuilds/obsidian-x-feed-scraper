@@ -243,10 +243,10 @@ export class KnowledgeStore extends Store {
           "INSERT OR IGNORE INTO kb_observations(project_id,connection_id,item_id,type,title,text,url,attributes_json,media_json,occurred_at,first_seen,last_seen) "+
           "VALUES(?,?,?,?,?,?,?,?,?,?,?,?)"
         ).run(legacyId,connectionId,String(post.id),"post",String(post.author||""),
-          String(post.text||""),post.url||null,
+          String(post.text||""),post.url?String(post.url):null,
           JSON.stringify({author:String(post.author||""),username:String(post.username||"")}),
-          String(post.images_json||"[]"),post.published_at||null,
-          post.first_seen||date,post.last_seen||date);
+          String(post.images_json||"[]"),post.published_at?String(post.published_at):null,
+          String(post.first_seen||date),String(post.last_seen||date));
         if(result.changes)migrated.observations++;
       }
       const sources=this.db.prepare("SELECT * FROM sources").all() as Row[];
@@ -256,25 +256,25 @@ export class KnowledgeStore extends Store {
           "INSERT OR IGNORE INTO kb_entities(project_id,entity_key,type,title,url,attributes_json,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?)"
         ).run(legacyId,key,"web-resource",String(source.title||key),key,
           JSON.stringify({description:String(source.description||""),license:String(source.license||""),
-            access:String(source.access||"unknown")}),source.first_seen||date,source.updated_at||date);
+            access:String(source.access||"unknown")}),String(source.first_seen||date),String(source.updated_at||date));
         if(result.changes)migrated.entities++;
         this.db.prepare(
           "INSERT OR IGNORE INTO kb_assessments(project_id,entity_key,category,score,confidence,reasons_json,evaluator_id,updated_at) VALUES(?,?,?,?,?,?,?,?)"
         ).run(legacyId,key,String(source.category||"uncategorized"),Number(source.score||0),
-          Number(source.confidence||0),String(source.reasons||"[]"),"legacy-heuristic",source.updated_at||date);
+          Number(source.confidence||0),String(source.reasons||"[]"),"legacy-heuristic",String(source.updated_at||date));
         const reviews=this.db.prepare(
           "SELECT id,decision,reason,reviewed_at FROM reviews WHERE source_id=? ORDER BY id"
-        ).all(source.id) as Row[];
+        ).all(Number(source.id)) as Row[];
         for(const review of reviews){
           this.db.prepare(
             "INSERT OR IGNORE INTO kb_reviews(project_id,entity_key,decision,reason,reviewed_at,legacy_review_id) VALUES(?,?,?,?,?,?)"
-          ).run(legacyId,key,String(review.decision),String(review.reason),review.reviewed_at||date,review.id);
+          ).run(legacyId,key,String(review.decision),String(review.reason),String(review.reviewed_at||date),Number(review.id));
         }
         // Old schema can contain directly approved status with no review history.
         if(!reviews.length&&["approved","rejected"].includes(String(source.status))){
           this.db.prepare(
             "INSERT OR IGNORE INTO kb_reviews(project_id,entity_key,decision,reason,reviewed_at,legacy_review_id) VALUES(?,?,?,?,?,?)"
-          ).run(legacyId,key,String(source.status),"Imported from original source status",source.updated_at||date,
+          ).run(legacyId,key,String(source.status),"Imported from original source status",String(source.updated_at||date),
             -Number(source.id));
         }
       }
