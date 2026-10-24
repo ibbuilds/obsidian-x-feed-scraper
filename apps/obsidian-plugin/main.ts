@@ -179,10 +179,6 @@ class SourceView extends ItemView {
     const root=this.contentEl;
     root.empty();root.addClass("xfs-panel");
     root.createEl("h3",{text:"Discovery Engine"});
-    const warning=root.createDiv({cls:"xfs-warning"});
-    warning.createEl("strong",{text:"X For You: not connected."});
-    warning.createEl("p",{text:"The personalized X feed has no verified authorized connector. "+
-      "RSS and manual imports are separately identified sources, never presented as For You."});
     if(!this.plugin.bridge.running){
       root.createEl("p",{text:this.plugin.bridge.lastError||
         "The local collector is not running. Node.js 22.16+ and the complete plugin ZIP are required."});
@@ -271,6 +267,10 @@ class SourceView extends ItemView {
           "Choose a research project manifest under Settings, or use the independent project CLI."});
       }
       generic.createEl("h4",{text:"X Feed Scraper (legacy curation)"});
+      const warning=root.createDiv({cls:"xfs-warning"});
+      warning.createEl("strong",{text:"X For You: not connected."});
+      warning.createEl("p",{text:"The authenticated personalized X For You feed has no verified authorized adapter. "+
+        "Legacy RSS and manual imports are separate sources, never labeled as your For You timeline."});
       const actions=root.createDiv({cls:"xfs-actions"});
       button(actions,"Refresh",()=>{void this.draw();});
       button(actions,"Diagnostics",()=>{
