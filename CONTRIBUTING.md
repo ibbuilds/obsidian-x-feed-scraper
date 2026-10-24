@@ -16,3 +16,5 @@ To add a new source, processor, evaluator or output, implement the v1 contracts 
 Preserve compatibility with the installed Obsidian plugin ID (`x-feed-scraper`) and existing SQLite tables and Markdown. Additive migrations must retain prior reviews, relationships and records. Never automatically edit or overwrite root References.md.
 
 Never commit private vaults, access tokens, authenticated X session data, customer records or credentials. Extensions execute trusted local code and are not sandboxed. Use provider-authorized interfaces; do not implement undocumented account scraping or automated X engagement.
+
+MCP sources should be explicitly authorized, test both modern discovery and legacy handshake using synthetic fixtures, and normalize untrusted tool output without executing expressions. An MCP server's existence is not evidence it can read a personalized X timeline.

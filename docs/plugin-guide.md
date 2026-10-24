@@ -4,7 +4,7 @@
 
 Requirements: Obsidian Desktop **1.9.2+** with the Bases core plugin enabled, and Node.js **22.16+** available to the desktop application.
 
-Download the latest verified `v0.5.0-beta.1` release ZIP. Copy its three standard files (`main.js`, `manifest.json` and `styles.css`) into `<vault>/.obsidian/plugins/x-feed-scraper/`. **Do not rename this directory**: the original plugin ID is preserved for existing users. Enable **Discovery Engine** in Community plugins.
+Download the latest verified `v0.6.0-beta.1` release ZIP. Copy its three standard files (`main.js`, `manifest.json` and `styles.css`) into `<vault>/.obsidian/plugins/x-feed-scraper/`. **Do not rename this directory**: the original plugin ID is preserved for existing users. Enable **Discovery Engine** in Community plugins.
 
 The plugin contains its own verified Node collector, stored outside the vault after first start. It binds an authenticated loopback port and stores its SQLite database in `~/.x-feed-scraper/<vault-hash>/library.db`. If Node cannot be found from a desktop launcher, use its absolute executable path in Settings.
 
@@ -13,11 +13,11 @@ The plugin contains its own verified Node collector, stored outside the vault af
 1. Create a JSON project manifest using `docs/projects.md` (or start from `examples/frontend/project.json`).
 2. Configure the source adapters allowed to access your chosen sources. Optional third-party extensions must be installed and approved manually.
 3. Enter the absolute manifest path under **Settings → Research project manifest**. For an external extension, enter its trusted absolute `.cjs` path.
-4. Choose a sync interval (0 means manual execution; 15 minutes minimum for scheduled projects). Restart collector.
+4. Choose a sync interval (0 means manual execution; 15 minutes minimum for scheduled projects). Restart collector. A scheduled source collects immediately on startup, then on its interval, and displays status in the sidebar.
 5. Open the Discovery Engine sidebar, click **Run research project**, and view entities, observation counts, scores and provenance. Approve/reject only the discoveries you personally verified.
 6. Use **Reevaluate stored data** after changing scoring criteria, without refetching the source. **Export project** writes the configured outputs.
 
-The initial example reads a local synthetic JSON file. It is not a substitute for an authorized personalized X For You connector.
+For a trusted local MCP server, select the `mcp-stdio` adapter with its listing tool; see `docs/mcp-stdio.md`. The initial example reads a local synthetic JSON file. It is not a substitute for an authorized personalized X For You connector.
 
 ## Existing v0.4 workflow
 
