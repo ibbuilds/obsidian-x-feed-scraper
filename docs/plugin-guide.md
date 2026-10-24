@@ -3,7 +3,7 @@
 ## Prerequisites and installation
 
 - Obsidian Desktop 1.8+ and Node.js 22.16+ are required. No cloud account, paid API or X authentication is necessary for supported connectors.
-- Download the successful GitHub Actions artifact named x-feed-scraper-obsidian from the CI workflow, then unpack the ZIP's five files into the vault plugin folder.
+- Download the successful GitHub Actions artifact named x-feed-scraper-obsidian from the CI workflow, then unpack the ZIP's three standard files (main.js, manifest.json, styles.css) into the vault plugin folder.
 - Enable X Feed Scraper under Settings > Community plugins. Open the ribbon sidebar and allow the local collector to start.
 - If Node.js is not found when Obsidian starts from a graphical launcher, configure its absolute executable path in the settings.
 - The service binds only a random local port. Its temporary bearer token is never saved in the vault. The standard Obsidian three-file installer is supported: the `main.js` bundle contains versioned and SHA-256-verified collector code and a default profile, extracted to `~/.x-feed-scraper/<vault-hash>/` without reaching out to any download server.

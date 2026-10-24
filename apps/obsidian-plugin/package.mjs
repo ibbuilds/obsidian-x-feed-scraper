@@ -3,7 +3,7 @@ import {dirname,join,resolve} from "node:path";
 import {fileURLToPath} from "node:url";
 import {zipSync,strToU8} from "fflate";
 const dir=dirname(fileURLToPath(import.meta.url));
-const files=["main.js","collector.cjs","manifest.json","design.json","styles.css"];
+const files=["main.js","manifest.json","styles.css"];
 const entries={};
 for(const file of files){
   const content=readFileSync(join(dir,file));
