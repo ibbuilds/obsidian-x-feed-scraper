@@ -10,7 +10,7 @@ import {createDefaultRegistry} from "../../packages/core/extensions.ts";
 import {loadProject} from "../../packages/core/project-config.ts";
 import {runProject,reprocessProject} from "../../packages/core/engine.ts";
 import {KnowledgeStore} from "../../packages/storage/knowledge.ts";
-import {demoObservations} from "../../packages/core/project-builder.ts";
+import {demoObservations} from "../../packages/core/demo.ts";
 import type {KnowledgeEntity,ProjectDefinition} from "../../packages/sdk/contracts.ts";
 
 declare const __SOURCE_SCRAPER_VERSION__:string;
