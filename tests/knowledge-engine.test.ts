@@ -226,3 +226,37 @@ test("opt-in public metadata processor does not retrieve unsafe local network UR
  assert.equal(result[0].url,"http://127.0.0.1/admin");
  assert.ok(result[0].evidence?.some(entry=>entry.signal==="metadata-unavailable"));
 });
+
+test("type collisions abort the page without corrupting previously committed entities",async()=>{
+ const root=mkdtempSync(join(tmpdir(),"discovery-collision-")),db=join(root,"db.sqlite");
+ try{
+  const ext=registry();
+  registerExtension(ext,{apiVersion:1,adapters:[{
+    id:"identity",
+    async collect({cursor}){
+      if(!cursor)return {observations:[{id:"first",type:"record",title:"Original"}],
+        nextCursor:"first",hasMore:true};
+      return {observations:[{id:"second",type:"record",title:"Conflicting"}],
+        nextCursor:"done",hasMore:false};
+    }
+  }],processors:[{id:"same-key",
+    run(_ctx,observation){
+      return [{key:"shared-key",type:observation.id==="first"?"record":"ticket",
+        title:observation.title||""}];
+    }
+  }],evaluators:[{id:"fixed",
+    assess(){return {category:"test",score:40,confidence:0.5,reasons:["Validated"]};}
+  }]});
+  const project=parseProject({id:"collision-proof",name:"Collision Proof",sources:[
+    {id:"primary",adapter:"identity",config:{}}
+  ],pipeline:["same-key"],evaluator:"fixed"});
+  const result=await runProject(db,project,ext);
+  assert.equal(result.success,false);
+  assert.match(result.runs[0].error||"",/identity reused/);
+  const store=new KnowledgeStore(db);
+  assert.equal(store.getEntity(project.id,"shared-key")?.type,"record");
+  assert.equal(store.getEntity(project.id,"shared-key")?.title,"Original");
+  assert.equal(store.cursor(project.id,"primary"),"first");
+  store.close();
+ }finally{rmSync(root,{recursive:true,force:true});}
+});
