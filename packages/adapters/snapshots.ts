@@ -1,4 +1,5 @@
 import {readFileSync} from "node:fs";
+import {createHash} from "node:crypto";
 import {isAbsolute} from "node:path";
 import {fetchPublicText} from "../connectors/public-http.ts";
 import {validateObservation} from "../core/project-config.ts";
@@ -14,21 +15,21 @@ function cached(signal:AbortSignal,key:string,load:()=>Promise<Observation[]>):P
   if(existing)return Promise.resolve(existing);
   return load().then(items=>{current!.set(key,items);return items;});
 }
-function readOffset(cursor:string|undefined):number{
-  if(cursor===undefined)return 0;
-  if(!/^(0|[1-9][0-9]{0,9})$/.test(cursor))throw new Error("Invalid source snapshot cursor");
-  const offset=Number(cursor);
-  if(!Number.isSafeInteger(offset))throw new Error("Invalid source offset");
-  return offset;
-}
 function page(items:Observation[],cursor:string|undefined,limit:number){
-  const offset=readOffset(cursor);
-  if(offset>items.length)throw new Error("Snapshot cursor exceeds collection length");
+  const revision=createHash("sha256").update(JSON.stringify(items)).digest("hex").slice(0,16);
+  let offset=0;
+  if(cursor!==undefined){
+    const match=/^([0-9a-f]{16}):(0|[1-9][0-9]{0,9})$/.exec(cursor);
+    if(!match)throw new Error("Invalid source snapshot cursor");
+    // A snapshot that changes while a large collection is being paged
+    // restarts safely from item 0, rather than skipping changed earlier rows.
+    if(match[1]===revision)offset=Number(match[2]);
+  }
+  if(offset>items.length)offset=0;
   const observations=items.slice(offset,offset+limit);
   const hasMore=offset+observations.length<items.length;
-  // A complete snapshot has no carry-over cursor: every new scheduled
-  // collection re-reads known entity identities and detects their changes.
-  return {observations,hasMore,nextCursor:hasMore?String(offset+observations.length):undefined};
+  return {observations,hasMore,
+    nextCursor:hasMore?revision+":"+String(offset+observations.length):undefined};
 }
 /** Rereads a configured local JSON array on every run, unlike append-only json-file. */
 export const jsonSnapshotSource:SourceAdapter={
