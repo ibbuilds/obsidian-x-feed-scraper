@@ -4,6 +4,7 @@ import {dirname} from "node:path";
 import {randomUUID} from "node:crypto";
 import type {Access, Evaluation, Metadata, Post, Source, Status} from "../core/types.ts";
 import {normalizeUrl} from "../core/url.ts";
+import {acquireLock} from "../core/lock.ts";
 
 type Row = Record<string, unknown>;
 function asSource(row: Row): Source {
@@ -21,7 +22,9 @@ function asSource(row: Row): Source {
 }
 export class Store {
   readonly db: DatabaseSync;
+  readonly file: string;
   constructor(file: string) {
+    this.file=file;
     mkdirSync(dirname(file), {recursive: true});
     this.db = new DatabaseSync(file);
     this.db.exec("PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON; PRAGMA busy_timeout=3000");
@@ -201,6 +204,8 @@ export class Store {
   review(id: number, decision: "approved"|"rejected"|"needs_review"|"excellent", reason: string, access?:Access): Source {
     if (!reason.trim()) throw new Error("Review reason is required");
     if(access && !["unknown","free","open_source","freemium","paid"].includes(access)) throw new Error("Invalid access classification");
+    const release=acquireLock(this.file+".lock");
+    try{
     const source = this.getSource(id);
     if (!source) throw new Error("Source not found");
     const status = decision === "excellent" ? "approved" : decision;
@@ -213,6 +218,7 @@ export class Store {
       this.db.exec("COMMIT");
     } catch (e) {this.db.exec("ROLLBACK");throw e;}
     return this.getSource(id)!;
+    }finally{release();}
   }
   getMetadata(id: number): Metadata & {context: string} {
     const row = this.db.prepare("SELECT s.*,COALESCE((SELECT group_concat(p.text,' ') FROM post_sources ps JOIN posts p ON p.connector=ps.connector AND p.id=ps.post_id WHERE ps.source_id=s.id),'') context FROM sources s WHERE s.id=?").get(id) as Row | undefined;
