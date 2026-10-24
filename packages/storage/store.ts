@@ -116,8 +116,17 @@ export class Store {
         JSON.stringify(evaluation.reasons),new Date().toISOString(),id);
   }
   error(runId: string, postId: string, message: string): void {
+    const sanitized=message
+      .replace(/https?:\/\/[^\s'"<>]+/gi,"[redacted-url]")
+      .replace(/\bBearer\s+[a-z0-9._~+/-]+/gi,"Bearer [redacted]")
+      .replace(/(?:token|password|secret|cookie|session|api[_-]?key)\s*[:=]\s*[^\s,;]+/gi,"[redacted-credential]");
     this.db.prepare("INSERT INTO errors(run_id,post_id,message,occurred_at) VALUES(?,?,?,?)")
-      .run(runId,postId,message.slice(0,300),new Date().toISOString());
+      .run(runId,postId,sanitized.slice(0,300),new Date().toISOString());
+  }
+  recentErrors(limit=20):Row[]{
+    return this.db.prepare(
+      "SELECT occurred_at,message FROM errors ORDER BY id DESC LIMIT ?"
+    ).all(Math.min(100,Math.max(1,Math.floor(limit)))) as Row[];
   }
   getSource(id: number): Source | undefined {
     const row = this.db.prepare("SELECT s.*,p.url post_url,p.author FROM sources s LEFT JOIN post_sources ps ON ps.source_id=s.id LEFT JOIN posts p ON p.id=ps.post_id AND p.connector=ps.connector WHERE s.id=? LIMIT 1").get(id) as Row|undefined;
