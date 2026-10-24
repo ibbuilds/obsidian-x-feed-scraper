@@ -1,7 +1,8 @@
-import {resolve,dirname} from "node:path";
+import {resolve} from "node:path";
 import {createDefaultRegistry} from "../../packages/core/extensions.ts";
 import {loadProject} from "../../packages/core/project-config.ts";
 import {runProject,reprocessProject} from "../../packages/core/engine.ts";
+import {exportProject} from "../../packages/core/export-project.ts";
 import {KnowledgeStore} from "../../packages/storage/knowledge.ts";
 import type {ProjectDefinition} from "../../packages/sdk/contracts.ts";
 
@@ -21,15 +22,6 @@ function number(args:string[],name:string,defaultValue:number):number{
   if(!Number.isSafeInteger(n)||n<0)throw new Error("Invalid --"+name);
   return n;
 }
-function normalizePaths(project:ProjectDefinition,path:string):ProjectDefinition{
-  // Local JSON fixture paths are relative to the project manifest, not a shell's cwd.
-  for(const source of project.sources){
-    if(source.adapter==="json-file"&&typeof source.config.path==="string"){
-      source.config.path=resolve(dirname(path),source.config.path);
-    }
-  }
-  return project;
-}
 export async function projectCommand(args:string[]):Promise<void>{
   const action=args[1]||"help";
   const HELP=[
@@ -46,7 +38,7 @@ export async function projectCommand(args:string[]):Promise<void>{
   if(action==="help"||action==="--help"){console.log(HELP);return;}
   const db=resolve(opt(args,"db")||process.env.XFS_DB||"./data/x-feed.db");
   const path=opt(args,"project");
-  const project=path?normalizePaths(loadProject(resolve(path)),resolve(path)):undefined;
+  const project=path?loadProject(resolve(path)):undefined;
   const extensions=opt(args,"extension")?[resolve(opt(args,"extension")!)]:[];
   const registry=createDefaultRegistry(extensions);
   const output=(value:unknown)=>console.log(JSON.stringify(value,null,2));
@@ -83,23 +75,6 @@ export async function projectCommand(args:string[]):Promise<void>{
     finally{store.close();}
   }else if(action==="export"){
     if(!project)throw new Error("--project is required");
-    const store=new KnowledgeStore(db);
-    const all=store.listEntities(project.id,{limit:500});
-    // Stream pages rather than assume that every project fits in a single SQL query.
-    for(let offset=500;;offset+=500){
-      const page=store.listEntities(project.id,{limit:500,offset});
-      if(!page.length)break;
-      all.push(...page);
-    }
-    store.close();
-    const records=all.filter(item=>item.review!=="rejected"&&item.score>=project.policy.minimumScore);
-    if(!project.outputs.length){output({entities:records.length,records});return;}
-    for(const selected of project.outputs){
-      const extension=registry.outputs.get(selected.adapter);
-      if(!extension)throw new Error("Output not registered: "+selected.adapter);
-      const result=await extension.export({project,records,config:selected.config,databasePath:db,
-        vaultPath:opt(args,"vault")});
-      output({output:selected.id,result});
-    }
+    output(await exportProject(db,project,registry,opt(args,"vault")));
   }else throw new Error("Unknown project command\n"+HELP);
 }
