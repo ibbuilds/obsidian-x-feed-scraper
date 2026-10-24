@@ -53,6 +53,10 @@ const DEFAULT:SettingsData={
   intervalMinutes:60,scoreThreshold:75,confidenceThreshold:0.65,preferFree:true,autoEnrich:false,
   projectManifestPath:"",extensionPath:""
 };
+function monitorValue(value:unknown):string{
+  const encoded=JSON.stringify(value);
+  return (encoded===undefined?"—":encoded).slice(0,120);
+}
 function asError(error:unknown):string {
   return error instanceof Error?error.message:String(error);
 }
@@ -363,8 +367,8 @@ class SourceView extends ItemView {
             item.createEl("p",{text:alert.ruleId+" · "+alert.entityKey});
             item.createEl("p",{cls:"xfs-meta",text:alert.detectedAt+" · "+alert.explanation});
             item.createEl("p",{text:alert.path+" · "+
-              JSON.stringify(alert.before).slice(0,120)+" → "+
-              JSON.stringify(alert.after).slice(0,120)});
+              monitorValue(alert.before)+" → "+
+              monitorValue(alert.after)});
           }
         }
         if(changes.length){
@@ -372,8 +376,8 @@ class SourceView extends ItemView {
           for(const change of changes.slice(0,20)){
             monitor.createEl("p",{cls:"xfs-meta",text:change.observedAt+" · "+
               change.entityKey+" · "+change.kind+" · "+change.path+" · "+
-              JSON.stringify(change.before).slice(0,120)+" → "+
-              JSON.stringify(change.after).slice(0,120)});
+              monitorValue(change.before)+" → "+
+              monitorValue(change.after)});
           }
         }else monitor.createEl("p",{text:"No changes recorded yet. "+
           "Snapshot sources recheck the same record identities on subsequent collections."});
