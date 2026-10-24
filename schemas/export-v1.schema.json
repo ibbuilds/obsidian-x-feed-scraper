@@ -1,0 +1,245 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/ibbuilds/source-scraper/blob/main/schemas/export-v1.schema.json",
+  "title": "Source Scraper JSON export v1",
+  "description": "Stdout/file envelope for the standalone CLI export --format json. NDJSON emits one per-record object instead.",
+  "type": "object",
+  "required": [
+    "schemaVersion",
+    "dataset",
+    "projectId",
+    "exportedAt",
+    "limit",
+    "offset",
+    "count",
+    "records"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": 1
+    },
+    "dataset": {
+      "enum": [
+        "entities",
+        "observations",
+        "changes",
+        "alerts"
+      ]
+    },
+    "projectId": {
+      "type": "string",
+      "minLength": 1
+    },
+    "exportedAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "limit": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 100000
+    },
+    "offset": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "count": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "records": {
+      "type": "array",
+      "items": {
+        "type": "object"
+      }
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "dataset": {
+            "const": "entities"
+          }
+        },
+        "required": [
+          "dataset"
+        ]
+      },
+      "then": {
+        "properties": {
+          "records": {
+            "items": {
+              "$ref": "#/$defs/entity"
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "dataset": {
+            "const": "observations"
+          }
+        },
+        "required": [
+          "dataset"
+        ]
+      },
+      "then": {
+        "properties": {
+          "records": {
+            "items": {
+              "$ref": "#/$defs/observationRecord"
+            }
+          }
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "entity": {
+      "type": "object",
+      "required": [
+        "projectId",
+        "key",
+        "type",
+        "title",
+        "attributes",
+        "category",
+        "score",
+        "confidence",
+        "reasons",
+        "review",
+        "updatedAt",
+        "observationCount"
+      ],
+      "properties": {
+        "projectId": {
+          "type": "string"
+        },
+        "key": {
+          "type": "string"
+        },
+        "type": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        },
+        "url": {
+          "type": "string"
+        },
+        "attributes": {
+          "type": "object"
+        },
+        "category": {
+          "type": "string"
+        },
+        "score": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 100
+        },
+        "confidence": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "reasons": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "review": {
+          "enum": [
+            "pending",
+            "approved",
+            "rejected"
+          ]
+        },
+        "updatedAt": {
+          "type": "string"
+        },
+        "observationCount": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "provenance": {
+          "type": "object",
+          "required": [
+            "mentions",
+            "reviews",
+            "assessmentHistory",
+            "mentionsTruncated"
+          ],
+          "properties": {
+            "mentions": {
+              "type": "array",
+              "items": {
+                "type": "object"
+              }
+            },
+            "reviews": {
+              "type": "array",
+              "items": {
+                "type": "object"
+              }
+            },
+            "assessmentHistory": {
+              "type": "array",
+              "items": {
+                "type": "object"
+              }
+            },
+            "mentionsTruncated": {
+              "type": "boolean"
+            }
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "observationRecord": {
+      "type": "object",
+      "required": [
+        "connectionId",
+        "itemId",
+        "firstSeen",
+        "lastSeen",
+        "observation"
+      ],
+      "properties": {
+        "connectionId": {
+          "type": "string"
+        },
+        "itemId": {
+          "type": "string"
+        },
+        "firstSeen": {
+          "type": "string"
+        },
+        "lastSeen": {
+          "type": "string"
+        },
+        "observation": {
+          "anyOf": [
+            {
+              "$ref": "observation-v1.schema.json"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "legacyKnownFields": {
+          "type": "object"
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}
