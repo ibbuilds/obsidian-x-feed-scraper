@@ -67,10 +67,17 @@ export class Store {
   }
   savePost(runId: string, connector: string, post: Post): boolean {
     if (!post.id?.trim() || !post.url?.trim()) throw new Error("Post requires nonempty ID and URL");
-    normalizeUrl(post.url);
+    // Never store raw post/media URLs containing fragments or credential-bearing query parameters.
+    const postUrl=normalizeUrl(post.url);
+    const images:string[]=[];
+    for(const raw of post.images||[]){
+      try{images.push(normalizeUrl(raw));}
+      catch{/* Images with unsafe or non-web URLs are not exported. */}
+      if(images.length>=30)break;
+    }
     const now = new Date().toISOString();
     const result = this.db.prepare("INSERT OR IGNORE INTO posts(id,connector,url,author,username,text,published_at,images_json,first_seen,last_seen,processing_status) VALUES (?,?,?,?,?,?,?,?,?,?,'processing')")
-      .run(post.id, connector, post.url, post.author, post.username, post.text, post.publishedAt || null, JSON.stringify(post.images || []), now, now);
+      .run(post.id, connector, postUrl, post.author, post.username, post.text, post.publishedAt || null, JSON.stringify(images), now, now);
     this.db.prepare("UPDATE posts SET last_seen=? WHERE id=? AND connector=?").run(now,post.id,connector);
     this.db.prepare("INSERT OR IGNORE INTO sightings(run_id,connector,post_id,seen_at) VALUES(?,?,?,?)").run(runId,connector,post.id,now);
     return result.changes > 0;
