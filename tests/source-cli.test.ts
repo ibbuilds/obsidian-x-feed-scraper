@@ -40,6 +40,9 @@ test("standalone executable is bundled independently of Obsidian",()=>{
   const adapters=asJson(["adapters"]);
   assert.ok(adapters.sources.includes("json-snapshot"));
   assert.ok(adapters.sources.includes("mcp-stdio"));
+  assert.ok(adapters.outputs.includes("json"));
+  assert.equal(adapters.outputs.includes("obsidian"),false,
+    "Core CLI must not register Obsidian output implicitly");
 });
 
 test("first run needs only a JSON manifest, JSON observations and standalone Node executable",()=>{
