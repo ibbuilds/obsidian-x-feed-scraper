@@ -41,13 +41,15 @@ Use the template `examples/job-radar/greenhouse-template.json` and replace the p
 
 See the [official Greenhouse Job Board API documentation](https://docs.greenhouse.io/job-board).
 
-The generic `public-json` adapter accepts a user-configured **HTTPS GET** endpoint returning `application/json` with a response no greater than 1 MB and up to 10,000 mapped items. Field mapping uses the same safe dotted paths as the MCP adapter. Requests use the DNS-pinned SSRF-hardened public HTTP client. Authentication tokens in project URLs are disallowed; use a dedicated authorized adapter for private services.
+The generic `public-json` adapter accepts a user-configured **HTTPS GET** endpoint returning `application/json` with a response no greater than 1 MB and up to 10,000 mapped items. Field mapping uses the same safe dotted paths as the MCP adapter. Requests use the DNS-pinned SSRF-hardened public HTTP client; a redirect from HTTPS to HTTP fails before requesting the insecure destination. Authentication tokens in project URLs are disallowed; use a dedicated authorized adapter for private services.
 
 ### Public product pages with Schema.org
 
 The template `examples/price-monitor/public-product-template.json` accepts a list of 1–100 HTTPS product URLs.
 
 The `public-product` adapter downloads public HTML (up to 1 MB per page), searches for JSON-LD Schema.org `Product` and a single unambiguous `Offer` with a numeric price and ISO currency, and records price, currency, availability and SKU when published. It processes at most five pages per API call and each finished collection revisits the configured pages at the next scheduled run.
+
+A page must contain exactly one recognized Product and that Product must have one supported Offer. A second Product makes the page ambiguous even if it has no offer or has multiple offers. The collector does not select a related accessory just because its price is easier to parse. HTTPS-to-HTTP redirects also fail; these source failures leave the failed page's checkpoint and stored entities unchanged.
 
 This **does not** scrape arbitrary visual price labels, execute JavaScript, support logins, reconcile arbitrary variants or guarantee a merchant's displayed price matches the structured data. A page without supported structured data returns an explicit failure rather than an invented price.
 
@@ -89,6 +91,8 @@ The guided Obsidian project wizard supports common alert types. An advanced JSON
 - Every state change, corresponding alert, and next source cursor are written atomically in the existing SQLite transaction. Failed pages do not advance the cursor.
 - Reprocessing relevance rules is separate and **does not** fabricate new source changes or clear human reviews.
 - Repeated unchanged snapshots are idempotent.
+- Each engine execution has its own snapshot and metadata cache, including when an SDK caller reuses one cancellation signal across runs or projects. Pagination within one execution still shares its snapshot.
+- Cancellation is checked before committing a page. Previously committed pages remain available, but a page returned after cancellation cannot write history, alerts or a new checkpoint.
 
 To inspect from the CLI:
 

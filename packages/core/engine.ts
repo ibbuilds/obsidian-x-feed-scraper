@@ -64,7 +64,10 @@ export async function runProject(dbPath:string,project:ProjectDefinition,registr
   const pageSize=opts.pageSize??100,maxPages=opts.maxPages??100;
   if(!Number.isInteger(pageSize)||pageSize<1||pageSize>500||
     !Number.isInteger(maxPages)||maxPages<1||maxPages>1000)throw new Error("Invalid execution page bounds");
-  const signal=opts.signal??new AbortController().signal;
+  // Built-in adapters and processors scope snapshot/metadata caches to this
+  // signal. Derive a fresh signal per run even when a caller reuses its own
+  // controller across projects or scheduled runs; keep cancellation linked.
+  const signal=opts.signal?AbortSignal.any([opts.signal]):new AbortController().signal;
   const release=acquireLock(dbPath+".lock");
   let store:KnowledgeStore|undefined;
   const result:ProjectRun={projectId:project.id,runs:[],observations:0,newEntities:0,duplicates:0,success:true};
@@ -106,6 +109,9 @@ export async function runProject(dbPath:string,project:ProjectDefinition,registr
             const entities=await processItem(project,source,observation,registry,signal);
             processed.push({observation,entities});
           }
+          // A source may complete an in-flight request after cancellation.
+          // Neither that page nor one aborted during processing may commit.
+          if(signal.aborted)throw new Error("Processing aborted");
           // A page that fails during processing never enters this transaction.
           const committed=store.saveBatch(project.id,source,processed,page.nextCursor,
             project.evaluator,project.watch?.rules||[]);
