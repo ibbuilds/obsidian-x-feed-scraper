@@ -64,7 +64,7 @@ export function ingest(dbPath: string, posts: Post[], profile: Profile, connecto
     try{store?.close();}finally{release();}
   }
 }
-export async function enrich(dbPath:string,profile:Profile,references:ReadonlySet<string>,limit=20):
+export async function enrich(dbPath:string,profile:Profile,references:ReadonlySet<string>,limit=20,manual=true):
   Promise<{checked:number;updated:number;failed:number}> {
   const release=acquireLock(dbPath+".lock");
   let store:Store|undefined;
@@ -73,13 +73,15 @@ export async function enrich(dbPath:string,profile:Profile,references:ReadonlySe
   try {
     store=new Store(dbPath);
     runId=store.begin("metadata");
-    const pending=store.pendingForEnrichment(limit);
+    const pending=store.pendingForEnrichment(limit,manual);
     for(const source of pending){
       results.checked++;
+      let metadataId=source.id;
       try {
         const {url:canonical,metadata}=await fetchPublicMetadata(source.url);
         if(isXUrl(canonical))throw new Error("Resolved to X, not an external resource");
         const canonicalId=store.repointSource(source.id,normalizeUrl(canonical));
+        metadataId=canonicalId;
         const old=store.getMetadata(canonicalId);
         const evaluation=evaluate(normalizeUrl(canonical),metadata.title||old.title||"",old.context,metadata,profile,references);
         const boost=store.preferenceBoost(evaluation.category);
@@ -88,11 +90,14 @@ export async function enrich(dbPath:string,profile:Profile,references:ReadonlySe
           evaluation.status="high_quality";
         }
         store.updateEvaluation(canonicalId,metadata,evaluation);
+        store.markMetadataAttempt(canonicalId);
         results.updated++;
       }catch(error){
         results.failed++;
         const message=error instanceof Error?error.message:"Unknown metadata failure";
-        store.error(runId,String(source.id),message.replace(/https?:\/\/\S+/g,"[redacted-url]").slice(0,200));
+        const safeMessage=message.replace(/https?:\/\/\S+/g,"[redacted-url]").slice(0,200);
+        store.error(runId,String(source.id),safeMessage);
+        if(store.getSource(metadataId))store.markMetadataAttempt(metadataId,safeMessage);
       }
     }
     store.finish(runId,results.failed?"partial":"success",results.checked,0,0);
