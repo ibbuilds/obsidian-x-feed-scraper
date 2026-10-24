@@ -1,0 +1,52 @@
+{
+  "id": "desktop-price-monitor",
+  "name": "Desktop Price Monitor",
+  "sources": [
+    {
+      "id": "local-price-data",
+      "adapter": "json-snapshot",
+      "config": {
+        "path": "price-snapshot.json"
+      }
+    }
+  ],
+  "pipeline": [
+    "observation-entity"
+  ],
+  "evaluator": "keyword",
+  "policy": {
+    "includeKeywords": [
+      "headphones",
+      "keyboard"
+    ],
+    "excludeKeywords": [],
+    "minimumScore": 0
+  },
+  "watch": {
+    "rules": [
+      {
+        "id": "price-drop-10",
+        "path": "/attributes/price",
+        "operator": "decrease-percent",
+        "threshold": 10,
+        "requireUnchanged": [
+          "/attributes/currency"
+        ]
+      },
+      {
+        "id": "new-product",
+        "path": "$",
+        "operator": "created"
+      }
+    ]
+  },
+  "outputs": [
+    {
+      "id": "notes",
+      "adapter": "obsidian",
+      "config": {
+        "folder": "Discovery Engine"
+      }
+    }
+  ]
+}
