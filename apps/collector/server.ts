@@ -333,7 +333,11 @@ export function startServer(config:ServerOptions):ReturnType<typeof createServer
       void job.then(value=>{
         const generic=(value as {result?:{success?:boolean;errors?:number}}).result;
         if(generic?.success===false||(generic?.errors||0)>0){
-          scheduler.lastFailure="Some observations or connections failed; inspect project runs";
+          const projectRuns=(value as {result?:{runs?:Array<{status:string}>}}).result?.runs||[];
+          scheduler.lastFailure=projectRuns.length&&projectRuns.every(run=>
+            run.status==="success"||run.status==="partial")?
+            "Work budget reached; remaining pages will resume next cycle":
+            "Some observations or connections failed; inspect project runs";
         }else{
           scheduler.lastFailure=null;
           scheduler.lastSuccess=new Date().toISOString();
