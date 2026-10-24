@@ -428,6 +428,20 @@ class ScraperSettings extends PluginSettingTab {
       .addText(t=>t.setValue(this.plugin.settings.nodeExecutable).onChange(async value=>{
         this.plugin.settings.nodeExecutable=value.trim()||"node";await this.plugin.saveSettings();
       }));
+    new Setting(root).setName("Research project manifest")
+      .setDesc("Absolute path to a project JSON file. The generic engine uses its own sources, "+
+        "processors, evaluator and outputs; no X or Obsidian dependency is required.")
+      .addText(t=>t.setPlaceholder("/path/to/project.json")
+        .setValue(this.plugin.settings.projectManifestPath).onChange(async value=>{
+          this.plugin.settings.projectManifestPath=value.trim();await this.plugin.saveSettings();
+        }));
+    new Setting(root).setName("Trusted local extension (.cjs)")
+      .setDesc("Optional absolute path. Extensions run JavaScript with your OS permissions. "+
+        "Only load code you audited and trust; no automatic downloads.")
+      .addText(t=>t.setPlaceholder("/path/to/extension.cjs")
+        .setValue(this.plugin.settings.extensionPath).onChange(async value=>{
+          this.plugin.settings.extensionPath=value.trim();await this.plugin.saveSettings();
+        }));
     new Setting(root).setName("Authorized RSS/Atom URL")
       .setDesc("Public HTTP(S) feeds only. Do not use account/session tokens here. Not an X feed.")
       .addText(t=>t.setValue(this.plugin.settings.feedUrl).onChange(async value=>{
@@ -520,16 +534,22 @@ export default class ScraperPlugin extends Plugin {
   }
   notifyExport(raw:unknown):void{
     if(!raw||typeof raw!=="object")return;
-    const result=(raw as {export?:unknown}).export;
-    if(!result||typeof result!=="object")return;
-    const x=result as {created?:number;updated?:number;removed?:number;conflicts?:number;conflictPaths?:string[]};
-    const summary="Notes: "+(x.created||0)+" created, "+(x.updated||0)+" updated, "+
-      (x.removed||0)+" retired";
-    if(x.conflicts){
-      const paths=(x.conflictPaths||[]).slice(0,3).join("; ");
-      new Notice(summary+". "+x.conflicts+" edit conflicts preserved. "+paths,12000);
-    }else if((x.created||0)+(x.updated||0)+(x.removed||0)>0){
-      new Notice(summary,5500);
+    const response=raw as {export?:unknown;exports?:unknown};
+    const source=response.exports;
+    const results=Array.isArray(source)?
+      source.map(entry=>(entry as {result?:unknown}).result):
+      [response.export];
+    for(const item of results){
+      if(!item||typeof item!=="object")continue;
+      const data=item as {created?:number;updated?:number;removed?:number;
+        conflicts?:number;conflictPaths?:string[]};
+      const summary="Notes: "+(data.created||0)+" created, "+(data.updated||0)+" updated";
+      if(data.conflicts){
+        new Notice(summary+"; "+data.conflicts+" edits preserved. "+
+          (data.conflictPaths||[]).slice(0,3).join("; "),12000);
+      }else if((data.created||0)+(data.updated||0)+(data.removed||0)>0){
+        new Notice(summary,5500);
+      }
     }
   }
   async saveSettings():Promise<void>{await this.saveData(this.settings);}
@@ -566,7 +586,9 @@ export default class ScraperPlugin extends Plugin {
       threshold:this.settings.scoreThreshold,
       confidence:this.settings.confidenceThreshold,
       preferFree:this.settings.preferFree,
-      autoEnrich:this.settings.autoEnrich
+      autoEnrich:this.settings.autoEnrich,
+      projectPath:this.settings.projectManifestPath||undefined,
+      extensionPath:this.settings.extensionPath||undefined
     });
   }
   async restart():Promise<void>{
