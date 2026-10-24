@@ -186,7 +186,12 @@ class SourceView extends ItemView {
     root.empty();root.addClass("xfs-panel");
     root.createEl("h3",{text:"Discovery Engine"});
     button(root,"Create research project",()=>this.plugin.openProjectSetup());
-    const saved=this.plugin.installedProjects();
+    let saved:Array<{path:string;id:string;name:string}>=[];
+    try{saved=this.plugin.installedProjects();}
+    catch(error){
+      root.createEl("p",{cls:"xfs-warning",text:
+        "Saved project list is unavailable: "+asError(error)});
+    }
     if(saved.length>1||saved.some(item=>item.path!==this.plugin.settings.projectManifestPath)){
       const selector=root.createEl("select",{attr:{"aria-label":"Choose saved research project"}});
       for(const project of saved){
