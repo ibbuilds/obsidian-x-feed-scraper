@@ -40,18 +40,30 @@ function plainObject(value:unknown):value is Record<string,JsonValue>{
 function escapePointer(value:string):string {
   return value.replace(/~/g,"~0").replace(/\//g,"~1");
 }
-function sortedJson(value:JsonValue|undefined):string {
-  if(value===undefined)return "undefined";
-  if(Array.isArray(value))return "["+value.map(sortedJson).join(",")+"]";
-  if(plainObject(value)){
-    return "{"+Object.keys(value).sort().map(key=>
-      JSON.stringify(key)+":"+sortedJson(value[key])
-    ).join(",")+"}";
-  }
-  return JSON.stringify(value);
-}
+/**
+ * JSON-semantic structural equality: object key order does not matter; array
+ * order and explicit null/undefined distinctions do. Walk each subtree once,
+ * instead of recursively sorting and serializing both operands to strings.
+ * Values are constrained by the public JSON SDK (finite numbers, acyclic).
+ */
 export function sameJson(a:JsonValue|undefined,b:JsonValue|undefined):boolean{
-  return sortedJson(a)===sortedJson(b);
+  if(a===b)return true;
+  if(Array.isArray(a)){
+    if(!Array.isArray(b)||a.length!==b.length)return false;
+    for(let i=0;i<a.length;i++)if(!sameJson(a[i],b[i]))return false;
+    return true;
+  }
+  if(Array.isArray(b))return false;
+  if(plainObject(a)){
+    if(!plainObject(b))return false;
+    const keys=Object.keys(a);
+    if(keys.length!==Object.keys(b).length)return false;
+    for(const key of keys){
+      if(!Object.prototype.hasOwnProperty.call(b,key)||!sameJson(a[key],b[key]))return false;
+    }
+    return true;
+  }
+  return false;
 }
 export function readPointer(value:EntitySnapshot,path:string):JsonValue|undefined{
   if(path==="$")return value as unknown as JsonValue;
