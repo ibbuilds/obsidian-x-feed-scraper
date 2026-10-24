@@ -7,16 +7,24 @@ import {normalizeUrl} from "../core/url.ts";
 import {parseMcpMapping,mapMcpToolResult,mcpField} from "./mcp-mapping.ts";
 import type {Observation,SourceAdapter,SourceContext} from "../sdk/contracts.ts";
 
-const snapshots=new WeakMap<AbortSignal,Map<string,Observation[]>>();
-function cached(signal:AbortSignal,key:string,load:()=>Promise<Observation[]>):Promise<Observation[]>{
+interface LoadedSnapshot {items:Observation[];revision:string}
+const snapshots=new WeakMap<AbortSignal,Map<string,LoadedSnapshot>>();
+function cached(signal:AbortSignal,key:string,load:()=>Promise<Observation[]>):Promise<LoadedSnapshot>{
   let current=snapshots.get(signal);
   if(!current){current=new Map();snapshots.set(signal,current);}
   const existing=current.get(key);
   if(existing)return Promise.resolve(existing);
-  return load().then(items=>{current!.set(key,items);return items;});
+  return load().then(items=>{
+    // A cursor's revision belongs to the entire run, not to each page.
+    // Hash once to avoid O(total items * number of pages) CPU work.
+    const snapshot={items,revision:createHash("sha256")
+      .update(JSON.stringify(items)).digest("hex").slice(0,16)};
+    current!.set(key,snapshot);
+    return snapshot;
+  });
 }
-function page(items:Observation[],cursor:string|undefined,limit:number){
-  const revision=createHash("sha256").update(JSON.stringify(items)).digest("hex").slice(0,16);
+function page(snapshot:LoadedSnapshot,cursor:string|undefined,limit:number){
+  const {items,revision}=snapshot;
   let offset=0;
   if(cursor!==undefined){
     const match=/^([0-9a-f]{16}):(0|[1-9][0-9]{0,9})$/.exec(cursor);
