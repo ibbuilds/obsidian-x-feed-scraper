@@ -16,7 +16,8 @@ interface SettingsData {
   confidenceThreshold:number;preferFree:boolean;
 }
 interface Source {
-  id:number;url:string;title:string;category:string;access:string;
+  id:number;url:string;title:string;description?:string;license?:string;
+  category:string;access:string;
   score:number;confidence:number;status:string;reasons:string[];
   firstSeen:string;postUrl?:string;author?:string;
 }
@@ -128,6 +129,7 @@ class ImportModal extends Modal {
 class SourceView extends ItemView {
   private query="";
   private status="";
+  private page=0;
   constructor(leaf:WorkspaceLeaf,private plugin:ScraperPlugin){super(leaf);}
   getViewType():string{return VIEW;}
   getDisplayText():string{return "X Feed Scraper";}
@@ -150,7 +152,7 @@ class SourceView extends ItemView {
       return;
     }
     try{
-      const query="/sources?limit=100"+(this.status?"&status="+encodeURIComponent(this.status):"")+
+      const query="/sources?limit=100&offset="+(this.page*100)+(this.status?"&status="+encodeURIComponent(this.status):"")+
         (this.query?"&q="+encodeURIComponent(this.query):"");
       const [stats,sources,recs,history,visuals]=await Promise.all([
         this.plugin.call("/status") as Promise<Stats>,
@@ -208,9 +210,17 @@ class SourceView extends ItemView {
       }
       filter.value=this.status;
       button(controls,"Search",()=>{
-        this.query=search.value.trim().slice(0,100);this.status=filter.value;
+        this.query=search.value.trim().slice(0,100);this.status=filter.value;this.page=0;
         void this.draw();
       });
+      const pager=controls.createDiv({cls:"xfs-actions"});
+      button(pager,"Previous",()=>{
+        this.page=Math.max(0,this.page-1);void this.draw();
+      }).disabled=this.page===0;
+      pager.createSpan({text:"Page "+(this.page+1)});
+      button(pager,"Next",()=>{
+        this.page++;void this.draw();
+      }).disabled=sources.length<100;
       if(!sources.length)root.createEl("p",{cls:"xfs-muted",text:"No sources match the filter."});
       for(const source of sources){
         const card=root.createDiv({cls:"xfs-card"});
@@ -220,6 +230,8 @@ class SourceView extends ItemView {
         const links=card.createDiv({cls:"xfs-actions"});
         external(links,"Open source",source.url);
         if(source.postUrl)external(links,"Original observation",source.postUrl);
+        if(source.description)card.createEl("p",{text:source.description.slice(0,500)});
+        if(source.license)card.createEl("p",{cls:"xfs-meta",text:"License: "+source.license});
         card.createEl("p",{text:source.reasons.join(" · ")});
         const decisions=card.createDiv({cls:"xfs-actions"});
         if(source.status!=="approved"&&source.status!=="rejected"){
