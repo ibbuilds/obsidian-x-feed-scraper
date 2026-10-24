@@ -15,6 +15,7 @@ interface SettingsData {
   nodeExecutable:string;autoStart:boolean;feedUrl:string;fixturePath:string;
   profilePath:string;intervalMinutes:number;scoreThreshold:number;
   confidenceThreshold:number;preferFree:boolean;autoEnrich:boolean;
+  projectManifestPath:string;extensionPath:string;
 }
 interface Source {
   id:number;url:string;title:string;description?:string;license?:string;
@@ -27,15 +28,24 @@ interface Stats {
   needs_review:number;approved:number;errors:number;
   active:boolean;paused:boolean;connectedSource:string;
   personalizedXFeed:string;feedUrl?:string|null;autoEnrich?:boolean;
+  activeProjectId?:string|null;
   lastRun?:{started_at:string;ended_at:string;status:string;posts_seen:number;duplicates:number};
 }
 interface Recommendations {
   posts:Array<{post_url:string;author:string;username:string;score:number;categories:string}>;
   authors:Array<{author:string;username:string;posts_seen:number;quality_sources:number}>;
 }
+interface KnowledgeRecord {
+  projectId:string;key:string;type:string;title:string;url?:string;
+  category:string;score:number;confidence:number;reasons:string[];
+  review:"pending"|"approved"|"rejected";observationCount:number;
+  attributes:Record<string,unknown>;
+}
+interface KnowledgeProject {id:string;name:string;entities:number;observations:number}
 const DEFAULT:SettingsData={
   nodeExecutable:"node",autoStart:true,feedUrl:"",fixturePath:"",profilePath:"",
-  intervalMinutes:60,scoreThreshold:75,confidenceThreshold:0.65,preferFree:true,autoEnrich:false
+  intervalMinutes:60,scoreThreshold:75,confidenceThreshold:0.65,preferFree:true,autoEnrich:false,
+  projectManifestPath:"",extensionPath:""
 };
 function asError(error:unknown):string {
   return error instanceof Error?error.message:String(error);
@@ -93,6 +103,29 @@ class ReviewModal extends Modal {
     }));
   }
 }
+class KnowledgeReviewModal extends Modal {
+  constructor(plugin:ScraperPlugin,projectId:string,entity:KnowledgeRecord,
+    decision:"approved"|"rejected"|"pending",done:()=>void){
+    super(plugin.app);
+    this.titleEl.setText("Review "+entity.title);
+    this.contentEl.createEl("p",{text:"This updates the project-specific decision. "+
+      "References.md is never appended automatically."});
+    const field=this.contentEl.createEl("textarea",{attr:{
+      rows:"3",placeholder:"Reason for this decision (required)",style:"width:100%"
+    }});
+    new Setting(this.contentEl).addButton(b=>b.setButtonText(decision).setCta().onClick(async()=>{
+      if(!field.value.trim()){new Notice("A review reason is required");return;}
+      try{
+        await plugin.call("/project/review","POST",{
+          projectId,key:entity.key,decision,reason:field.value.trim()
+        });
+        const exported=await plugin.call("/project/export","POST");
+        plugin.notifyExport(exported);
+        this.close();done();
+      }catch(error){new Notice(asError(error));}
+    }));
+  }
+}
 class ImportModal extends Modal {
   constructor(plugin:ScraperPlugin,done:()=>void){
     super(plugin.app);
@@ -134,6 +167,8 @@ class SourceView extends ItemView {
   private query="";
   private status="";
   private page=0;
+  private projectQuery="";
+  private projectPage=0;
   constructor(leaf:WorkspaceLeaf,private plugin:ScraperPlugin){super(leaf);}
   getViewType():string{return VIEW;}
   getDisplayText():string{return "X Feed Scraper";}
@@ -143,7 +178,7 @@ class SourceView extends ItemView {
   async draw():Promise<void>{
     const root=this.contentEl;
     root.empty();root.addClass("xfs-panel");
-    root.createEl("h3",{text:"X Feed Scraper"});
+    root.createEl("h3",{text:"Discovery Engine"});
     const warning=root.createDiv({cls:"xfs-warning"});
     warning.createEl("strong",{text:"X For You: not connected."});
     warning.createEl("p",{text:"The personalized X feed has no verified authorized connector. "+
