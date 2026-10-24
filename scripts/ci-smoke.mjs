@@ -4,7 +4,7 @@
  */
 import assert from "node:assert/strict";
 import {spawnSync} from "node:child_process";
-import {existsSync,mkdtempSync,rmSync} from "node:fs";
+import {existsSync,mkdtempSync,rmSync,writeFileSync} from "node:fs";
 import {tmpdir} from "node:os";
 import {dirname,join,resolve} from "node:path";
 import {fileURLToPath} from "node:url";
@@ -60,6 +60,20 @@ try{
 
   const invalid=execute(["sync","--db",join(workspace,"invalid.db")],false);
   assert.match(invalid.stderr,/Set --feed or --fixture/);
+
+  const partialFixture=join(workspace,"partial.json"),partialDb=join(workspace,"partial.db");
+  writeFileSync(partialFixture,JSON.stringify([
+    {id:"good",url:"https://x.com/fixture/status/1",author:"Tester",
+      username:"tester",text:"https://example.org/research"},
+    {id:"",url:"https://x.com/fixture/status/2",author:"Tester",
+      username:"tester",text:"Invalid fixture record"}
+  ]));
+  const partial=execute(["sync","--fixture",partialFixture,"--db",partialDb],false);
+  assert.equal(JSON.parse(partial.stdout).result.errors,1,
+    "Partial ingestion must be reported with a nonzero exit code");
+  const partialState=execute(["status","--db",partialDb]);
+  assert.equal(partialState.lastRun?.status,"partial");
+  assert.equal(Number(partialState.posts),1,"The successful row must remain committed");
 
   // Ensure the fallback path was never touched due dropped --db arguments.
   assert.equal(existsSync(join(workspace,"default-should-stay-unused.db")),false,
