@@ -9,6 +9,9 @@ type Row = Record<string, unknown>;
 function asSource(row: Row): Source {
   return {
     id: Number(row.id), url: String(row.normalized_url), title: String(row.title || ""),
+    description: typeof row.description === "string" ? row.description : undefined,
+    license: typeof row.license === "string" ? row.license : undefined,
+    contentType: typeof row.content_type === "string" ? row.content_type : undefined,
     category: String(row.category || "uncategorized"), access: String(row.access) as Source["access"],
     score: Number(row.score), confidence: Number(row.confidence), status: String(row.status) as Status,
     reasons: JSON.parse(String(row.reasons || "[]")) as string[],
@@ -32,6 +35,7 @@ export class Store {
       "CREATE TABLE IF NOT EXISTS errors (id INTEGER PRIMARY KEY, run_id TEXT REFERENCES runs(id), post_id TEXT, message TEXT NOT NULL, occurred_at TEXT NOT NULL);" +
       "CREATE TABLE IF NOT EXISTS checkpoints (connector TEXT PRIMARY KEY, last_run_id TEXT, updated_at TEXT NOT NULL);" +
       "CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);" +
+      "CREATE TABLE IF NOT EXISTS exported_notes (vault_id TEXT NOT NULL, note_path TEXT NOT NULL, content_hash TEXT NOT NULL, updated_at TEXT NOT NULL, PRIMARY KEY(vault_id,note_path));" +
       "CREATE INDEX IF NOT EXISTS idx_source_status_score ON sources(status,score DESC);" +
       "CREATE INDEX IF NOT EXISTS idx_sightings_post ON sightings(connector,post_id);" +
       "CREATE INDEX IF NOT EXISTS idx_post_sources_source ON post_sources(source_id);"
@@ -115,13 +119,14 @@ export class Store {
     const row = this.db.prepare("SELECT s.*,p.url post_url,p.author FROM sources s LEFT JOIN post_sources ps ON ps.source_id=s.id LEFT JOIN posts p ON p.id=ps.post_id AND p.connector=ps.connector WHERE s.id=? LIMIT 1").get(id) as Row|undefined;
     return row ? asSource(row) : undefined;
   }
-  listSources(status?: string, search?: string, limit = 100): Source[] {
-    const safeLimit = Math.max(1, Math.min(500,Math.floor(limit)));
+  listSources(status?: string, search?: string, limit = 100, offset = 0): Source[] {
+    const safeLimit = Number.isFinite(limit) ? Math.max(1, Math.min(500,Math.floor(limit))) : 100;
+    const safeOffset = Number.isFinite(offset) ? Math.max(0,Math.min(1000000,Math.floor(offset))) : 0;
     const query = "SELECT s.*, (SELECT p.url FROM post_sources ps JOIN posts p ON p.connector=ps.connector AND p.id=ps.post_id WHERE ps.source_id=s.id LIMIT 1) post_url," +
       " (SELECT p.author FROM post_sources ps JOIN posts p ON p.connector=ps.connector AND p.id=ps.post_id WHERE ps.source_id=s.id LIMIT 1) author FROM sources s" +
-      " WHERE (? IS NULL OR s.status=?) AND (? IS NULL OR (s.title LIKE ? OR s.normalized_url LIKE ? OR s.category LIKE ?)) ORDER BY s.score DESC,s.first_seen DESC LIMIT ?";
+      " WHERE (? IS NULL OR s.status=?) AND (? IS NULL OR (s.title LIKE ? OR s.normalized_url LIKE ? OR s.category LIKE ?)) ORDER BY s.score DESC,s.first_seen DESC LIMIT ? OFFSET ?";
     const q = search ? "%" + search.slice(0,100) + "%" : null;
-    return (this.db.prepare(query).all(status || null,status || null,q,q,q,q,safeLimit) as Row[]).map(asSource);
+    return (this.db.prepare(query).all(status || null,status || null,q,q,q,q,safeLimit,safeOffset) as Row[]).map(asSource);
   }
   pendingForEnrichment(limit=20):Source[] {
     const safeLimit=Math.max(1,Math.min(100,Math.floor(limit)));
@@ -145,6 +150,20 @@ export class Store {
       "FROM sources s ORDER BY s.id ASC LIMIT ? OFFSET ?"
     ).all(safeLimit,safeOffset) as Row[];
     return rows.map(asSource);
+  }
+  getExportHash(vaultId:string,relativePath:string):string|undefined {
+    const row=this.db.prepare("SELECT content_hash FROM exported_notes WHERE vault_id=? AND note_path=?")
+      .get(vaultId,relativePath) as {content_hash:string}|undefined;
+    return row?.content_hash;
+  }
+  recordExport(vaultId:string,relativePath:string,hash:string):void {
+    this.db.prepare(
+      "INSERT INTO exported_notes(vault_id,note_path,content_hash,updated_at) VALUES(?,?,?,?) "+
+      "ON CONFLICT(vault_id,note_path) DO UPDATE SET content_hash=excluded.content_hash,updated_at=excluded.updated_at"
+    ).run(vaultId,relativePath,hash,new Date().toISOString());
+  }
+  clearExport(vaultId:string,relativePath:string):void {
+    this.db.prepare("DELETE FROM exported_notes WHERE vault_id=? AND note_path=?").run(vaultId,relativePath);
   }
   listVisualPosts(limit=200):Row[] {
     return this.db.prepare(
