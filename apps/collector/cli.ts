@@ -9,6 +9,7 @@ import {ingest,enrich,referencesFromFile} from "../../packages/core/pipeline.ts"
 import {exportToVault} from "../../packages/core/obsidian.ts";
 import {Store} from "../../packages/storage/store.ts";
 import {startServer} from "./server.ts";
+import {projectCommand} from "./project-cli.ts";
 
 const args=process.argv.slice(2);
 function option(name:string):string|undefined {
@@ -23,7 +24,8 @@ function required(name:string):string {
 }
 function show(value:unknown):void {console.log(JSON.stringify(value,null,2));}
 const HELP=[
-  "Obsidian X Feed Scraper — local discovery engine (Node 22.16+)",
+  "Discovery Engine — extensible local knowledge processing (Node 22.16+)",
+  "  project help  # generic projects, adapters, processors, JSON and Obsidian exports",
   "  sync --feed https://example.org/feed.xml [--vault /vault]",
   "  sync --fixture tests/fixtures/posts.json     [demo only]",
   "  serve --feed https://example.org/feed.xml --interval 60 --port 0",
@@ -36,6 +38,7 @@ const HELP=[
 async function main():Promise<void>{
   const command=args[0]||"help";
   if(["help","--help","-h"].includes(command)){console.log(HELP);return;}
+  if(command==="project"){await projectCommand(args);return;}
   const db=resolve(option("db")||process.env.XFS_DB||"./data/x-feed.db");
   const vault=option("vault")||process.env.XFS_VAULT;
   const refsPath=option("references")||
