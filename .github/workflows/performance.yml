@@ -8,6 +8,7 @@ on:
       - "scripts/bench-repeat.mjs"
       - "scripts/bench-reprocess.mjs"
       - "scripts/bench-json-compare.mjs"
+      - "scripts/bench-keyword.mjs"
       - ".github/workflows/performance.yml"
   workflow_dispatch:
 permissions:
@@ -31,13 +32,14 @@ jobs:
       - run: npm ci --prefix baseline --no-audit --no-fund
       - name: Profile baseline on a clean SQLite database
         run: |
-          cp candidate/scripts/bench-engine.mjs candidate/scripts/bench-pagination.mjs candidate/scripts/bench-repeat.mjs candidate/scripts/bench-reprocess.mjs candidate/scripts/bench-json-compare.mjs baseline/scripts/
+          cp candidate/scripts/bench-engine.mjs candidate/scripts/bench-pagination.mjs candidate/scripts/bench-repeat.mjs candidate/scripts/bench-reprocess.mjs candidate/scripts/bench-json-compare.mjs candidate/scripts/bench-keyword.mjs baseline/scripts/
           cd baseline
           node --experimental-strip-types scripts/bench-engine.mjs 1200 12000 > ../baseline-profile.json
           node --experimental-strip-types scripts/bench-pagination.mjs 6000 50 > ../baseline-pagination.json
           node --experimental-strip-types scripts/bench-repeat.mjs 1800 > ../baseline-repeat.json
           node --experimental-strip-types scripts/bench-reprocess.mjs 2400 > ../baseline-reprocess.json
           node --experimental-strip-types scripts/bench-json-compare.mjs 16000 > ../baseline-json-compare.json
+          node --experimental-strip-types scripts/bench-keyword.mjs 65000 > ../baseline-keyword.json
       - name: Profile candidate with identical synthetic data
         run: |
           cd candidate
@@ -46,6 +48,7 @@ jobs:
           node --experimental-strip-types scripts/bench-repeat.mjs 1800 > ../candidate-repeat.json
           node --experimental-strip-types scripts/bench-reprocess.mjs 2400 > ../candidate-reprocess.json
           node --experimental-strip-types scripts/bench-json-compare.mjs 16000 > ../candidate-json-compare.json
+          node --experimental-strip-types scripts/bench-keyword.mjs 65000 > ../candidate-keyword.json
       - name: Compare critical hot paths without source or network dependencies
         run: |
           node --input-type=module - <<'NODE'
@@ -110,6 +113,16 @@ jobs:
               ' ms; ratio '+ratio.toFixed(3));
             if(ratio>=0.65)throw new Error('Insufficient JSON comparison speedup: '+name);
           }
+          const baseKeyword=JSON.parse(readFileSync('baseline-keyword.json','utf8'));
+          const nextKeyword=JSON.parse(readFileSync('candidate-keyword.json','utf8'));
+          if(baseKeyword.score!==nextKeyword.score||baseKeyword.changedScore!==nextKeyword.changedScore){
+            throw new Error('Keyword relevance scores changed');
+          }
+          console.log('keyword evaluation: baseline '+baseKeyword.ms+' ms, candidate '+
+            nextKeyword.ms+' ms; ratio '+(nextKeyword.ms/baseKeyword.ms).toFixed(3));
+          if(nextKeyword.ms>=baseKeyword.ms*0.75){
+            throw new Error('No significant evaluator throughput improvement');
+          }
           NODE
       - uses: actions/upload-artifact@v4
         if: always()
@@ -126,4 +139,6 @@ jobs:
             candidate-reprocess.json
             baseline-json-compare.json
             candidate-json-compare.json
+            baseline-keyword.json
+            candidate-keyword.json
           retention-days: 30
