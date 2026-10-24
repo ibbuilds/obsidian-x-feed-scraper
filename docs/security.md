@@ -17,7 +17,7 @@ Optional public page metadata retrieval occurs only on a manual request or after
 ## Risks and operational requirements
 
 - Install Node.js 22.16+ from a trusted source; keep the OS, Obsidian and its community plugins updated.
-- Do not paste access tokens into public feed URLs, project profiles or manual fixture files.
+- Credential-like query parameters in source URLs or public feed configuration are rejected before export. Never paste access tokens into URLs, research profiles or fixtures. Error messages redact URL strings and credential markers.
 - A website may change between evaluations and human review is necessary for curation.
 - Local platform-specific Obsidian runtime validation remains necessary.
 - Do not expose the local API outside loopback or bypass social-platform access restrictions.
