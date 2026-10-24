@@ -129,6 +129,7 @@ export class ProjectSetupModal extends Modal {
         configureSource();
       }));
     configureSource();
+    const failure=root.createEl("p",{cls:"xfs-setup-error"});
     new Setting(root).addButton(b=>b.setButtonText("Create & run project").setCta()
       .onClick(async()=>{
         if(this.submitting)return;
@@ -171,7 +172,9 @@ export class ProjectSetupModal extends Modal {
           new Notice("Research project created and first collection started");
           this.done();
         }catch(error){
-          new Notice(error instanceof Error?error.message:String(error),10000);
+          const message=error instanceof Error?error.message:String(error);
+          failure.setText("Project setup failed: "+message);
+          new Notice("Project setup failed: "+message,10000);
         }finally{this.submitting=false;b.setDisabled(false);}
       }));
   }
