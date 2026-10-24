@@ -13,7 +13,7 @@ import {existsSync} from "node:fs";
 
 export interface ServerOptions {
   db:string;profile:Profile;fixture?:string;feed?:string;vault?:string;references?:string;
-  token:string;port:number;intervalMinutes:number;
+  token:string;port:number;intervalMinutes:number;autoEnrich?:boolean;
 }
 function json(res:ServerResponse,code:number,value:unknown):void {
   res.writeHead(code,{"content-type":"application/json; charset=utf-8","cache-control":"no-store",
@@ -80,7 +80,8 @@ export function startServer(config:ServerOptions):ReturnType<typeof createServer
       const observations=config.feed?await fetchRSS(config.feed):readFixture(config.fixture!);
       inputAcquired=true;
       const result=ingest(config.db,observations,config.profile,connector,references());
-      return {result,export:config.vault?exportToVault(config.db,config.vault):null};
+      const analysis=config.autoEnrich?await enrich(config.db,config.profile,references(),10,false):null;
+      return {result,analysis,export:config.vault?exportToVault(config.db,config.vault):null};
     }catch(error){
       if(!inputAcquired){
         const store=new Store(config.db);
@@ -113,7 +114,8 @@ export function startServer(config:ServerOptions):ReturnType<typeof createServer
         busy=true;
         try{
           const result=ingest(config.db,posts,config.profile,"manual",references());
-          json(res,200,{result,export:config.vault?exportToVault(config.db,config.vault):null});
+          const analysis=config.autoEnrich?await enrich(config.db,config.profile,references(),10,false):null;
+          json(res,200,{result,analysis,export:config.vault?exportToVault(config.db,config.vault):null});
         }finally{busy=false;}
         return;
       }
@@ -158,7 +160,7 @@ export function startServer(config:ServerOptions):ReturnType<typeof createServer
           }
         }else if(req.method==="GET"&&url.pathname==="/status"){
           json(res,200,{...store.stats(),active:busy,paused,connectedSource:source(),
-            personalizedXFeed:"not_available",feedUrl:config.feed||null});
+            personalizedXFeed:"not_available",feedUrl:config.feed||null,autoEnrich:Boolean(config.autoEnrich)});
         }else if(req.method==="GET"&&url.pathname==="/sources"){
           json(res,200,store.listSources(url.searchParams.get("status")||undefined,
             url.searchParams.get("q")||undefined,Number(url.searchParams.get("limit")||100),
