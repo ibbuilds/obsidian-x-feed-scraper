@@ -1,8 +1,9 @@
 import {test} from "node:test";
 import assert from "node:assert/strict";
-import {mkdtempSync,mkdirSync,readFileSync,writeFileSync,readdirSync,rmSync} from "node:fs";
+import {mkdtempSync,mkdirSync,readFileSync,writeFileSync,readdirSync,rmSync,existsSync} from "node:fs";
 import {tmpdir} from "node:os";
 import {join,resolve} from "node:path";
+import {createHash} from "node:crypto";
 import {spawnSync} from "node:child_process";
 import {createDefaultRegistry} from "../packages/core/extensions.ts";
 import {registry,registerExtension} from "../packages/core/registry.ts";
@@ -299,5 +300,51 @@ test("evaluation provenance records the evaluator, changed scores and avoids dup
   ).get(project.id,key) as {n:number};
   assert.equal(row.n,entries.length,"Idempotent rescoring must not flood the history");
   same.close();
+ }finally{rmSync(root,{recursive:true,force:true});}
+});
+
+test("rejecting an entity retires only unedited generated output; user annotations survive",async()=>{
+ const root=mkdtempSync(join(tmpdir(),"discovery-retire-"));
+ const db=join(root,"db.sqlite"),vault=join(root,"vault");
+ mkdirSync(vault);
+ try{
+  const project=demo("frontend"),registered=createDefaultRegistry();
+  await runProject(db,project,registered);
+  const store=new KnowledgeStore(db);
+  const records=store.listEntities(project.id).filter(x=>x.score>=project.policy.minimumScore);
+  const selected=records.find(x=>x.key==="https://github.com/example/motion-kit")!;
+  assert.ok(selected);
+  store.close();
+  const adapter=registered.outputs.get("obsidian")!;
+  const input={project,records,config:{folder:"Discovery Engine"},databasePath:db,vaultPath:vault};
+  await adapter.export(input);
+  const dir=join(vault,"Discovery Engine",project.id);
+  const filename=createHash("sha256").update(selected.key).digest("hex").slice(0,24)+".md";
+  const generated=join(dir,filename);
+  assert.equal(existsSync(generated),true);
+  const changed=new KnowledgeStore(db);
+  changed.reviewEntity(project.id,selected.key,"rejected","Not useful for this library");
+  const allowed=changed.listEntities(project.id).filter(x=>
+    x.review!=="rejected"&&x.score>=project.policy.minimumScore);
+  changed.close();
+  const result=await adapter.export({...input,records:allowed}) as {removed:number};
+  assert.ok(result.removed>=1);
+  assert.equal(existsSync(generated),false);
+  const userFile=join(dir,"personal.md");
+  writeFileSync(userFile,"# My personal research\n");
+  await adapter.export({...input,records:allowed});
+  assert.equal(readFileSync(userFile,"utf8"),"# My personal research\n");
+  // Reintroduce the entity, annotate the generated version, then reject again.
+  const reopened=new KnowledgeStore(db);
+  reopened.reviewEntity(project.id,selected.key,"pending","Reconsideration");
+  const all=reopened.listEntities(project.id).filter(x=>
+    x.review!=="rejected"&&x.score>=project.policy.minimumScore);
+  reopened.close();
+  await adapter.export({...input,records:all});
+  const edited=readFileSync(generated,"utf8")+"Owner annotations\n";
+  writeFileSync(generated,edited);
+  const final=await adapter.export({...input,records:allowed}) as {conflicts:number};
+  assert.ok(final.conflicts>=1);
+  assert.equal(readFileSync(generated,"utf8"),edited);
  }finally{rmSync(root,{recursive:true,force:true});}
 });
