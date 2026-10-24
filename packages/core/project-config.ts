@@ -193,7 +193,7 @@ export function loadProject(file:string):ProjectDefinition{
   const local=(value:string)=>value.startsWith("./")||value.startsWith("../")||
     value.startsWith(".\\")||value.startsWith("..\\");
   for(const source of project.sources){
-    if(source.adapter==="json-file"&&typeof source.config.path==="string"){
+    if(["json-file","json-snapshot"].includes(source.adapter)&&typeof source.config.path==="string"){
       source.config.path=resolve(dirname(path),source.config.path);
     }
     if(source.adapter==="mcp-stdio"){
