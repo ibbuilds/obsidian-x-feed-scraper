@@ -216,4 +216,58 @@ describe("X Feed Scraper in actual Obsidian Desktop",function(){
     expect(verify.notes.some(path=>path.startsWith("Discovery Engine/p-my-research-"))).toBe(true);
   });
 
+  it("monitors product price changes and watch alerts inside the real Obsidian UI",async()=>{
+    const initial=await browser.executeObsidian(async({app,obsidian})=>{
+      const instance=(app as unknown as {plugins:{plugins:Record<string,{
+        settings:{projectManifestPath:string;intervalMinutes:number};
+        saveSettings:()=>Promise<void>;restart:()=>Promise<void>;
+        bridge:{running:boolean;lastError:string}
+      }>}}).plugins.plugins["x-feed-scraper"];
+      const root=(app.vault.adapter as {getBasePath:()=>string}).getBasePath();
+      instance.settings.projectManifestPath=root+"/price-monitor-project.json";
+      instance.settings.intervalMinutes=0;
+      await instance.saveSettings();
+      await instance.restart();
+      const refs=app.vault.getAbstractFileByPath("References.md");
+      if(!(refs instanceof obsidian.TFile))throw Error("References.md missing");
+      return {running:instance.bridge.running,references:await app.vault.read(refs)};
+    });
+    expect(initial.running).toBe(true);
+    const run=browser.$("//button[normalize-space()='Run research project']");
+    await run.waitForDisplayed({timeout:30000});
+    await run.click();
+    await browser.waitUntil(async()=>
+      (await browser.$(".xfs-panel").getText()).includes("Noise-cancelling headphones"),
+      {timeout:30000,timeoutMsg:"First public-product-shaped snapshot was not ingested"});
+    await browser.executeObsidian(async({app,obsidian})=>{
+      const file=app.vault.getAbstractFileByPath("price-snapshot.json");
+      if(!(file instanceof obsidian.TFile))throw Error("Snapshot missing");
+      const values=JSON.parse(await app.vault.read(file)) as Array<{
+        id:string;attributes:{price:number;currency:string}
+      }>;
+      values[0].attributes.price=99.99;
+      await app.vault.modify(file,JSON.stringify(values,null,2));
+    });
+    const second=browser.$("//button[normalize-space()='Run research project']");
+    await second.waitForDisplayed({timeout:20000});
+    await second.click();
+    await browser.waitUntil(async()=>{
+      const body=await browser.$(".xfs-panel").getText();
+      return body.includes("Monitoring: 3 recent alerts");
+    },{timeout:30000,timeoutMsg:"Price drop watch alert was not recorded"});
+    const details=browser.$("//summary[contains(.,'Monitoring:')]");
+    await details.click();
+    await browser.waitUntil(async()=>
+      (await browser.$(".xfs-panel").getText()).includes("price-drop-10"),
+      {timeout:15000,timeoutMsg:"Price alert not visible in Obsidian"});
+    const state=await browser.executeObsidian(async({app,obsidian})=>{
+      const refs=app.vault.getAbstractFileByPath("References.md");
+      if(!(refs instanceof obsidian.TFile))throw Error("References.md missing");
+      return {references:await app.vault.read(refs),
+        notes:app.vault.getMarkdownFiles().map(file=>file.path)};
+    });
+    expect(state.references).toBe(initial.references);
+    expect(state.notes.some(path=>path.startsWith("Discovery Engine/desktop-price-monitor/"))).toBe(true);
+  });
+
 });
