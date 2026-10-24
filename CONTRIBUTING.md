@@ -7,6 +7,13 @@ Requires Node.js **22.16+**.
     npm run package
     npm test
 
+Reproducible local performance profiles (synthetic; no network or vault access):
+
+    node --experimental-strip-types scripts/bench-engine.mjs
+    node --experimental-strip-types scripts/bench-pagination.mjs
+    node --experimental-strip-types scripts/bench-repeat.mjs
+    node --experimental-strip-types scripts/bench-reprocess.mjs
+
 GitHub CI additionally runs the real Obsidian Desktop app in an isolated Linux vault and Node integration tests on Linux/macOS/Windows.
 
 The product has one responsibility: **turn authorized external observations into structured, traceable, configurable knowledge**. Do not hardcode particular source sites, professions, datasets or output programs into the core.
