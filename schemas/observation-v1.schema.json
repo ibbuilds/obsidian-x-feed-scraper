@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://github.com/ibbuilds/source-scraper/blob/main/schemas/observation-v1.schema.json",
+  "$id": "https://raw.githubusercontent.com/ibbuilds/source-scraper/v0.10.0-beta.1/schemas/observation-v1.schema.json",
   "title": "Source Scraper normalized observation v1",
   "description": "A source adapter yields normalized observations; sources may lack web links.",
   "type": "object",
