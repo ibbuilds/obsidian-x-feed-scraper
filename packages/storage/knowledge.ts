@@ -1,6 +1,9 @@
 import {createHash,randomUUID} from "node:crypto";
 import {Store} from "./store.ts";
 import {acquireLock} from "../core/lock.ts";
+import {diffSnapshots,matchingRules,snapshot,sameJson} from "../core/change-tracking.ts";
+import type {EntitySnapshot,ChangeEvent,WatchAlert} from "../core/change-tracking.ts";
+import type {ChangeRule,JsonValue,JsonRecord} from "../sdk/contracts.ts";
 import type {ProjectDefinition,ProjectSource,Observation,EntityDraft,Assessment,KnowledgeEntity,ReviewState} from "../sdk/contracts.ts";
 
 type Row=Record<string,unknown>;
@@ -40,6 +43,15 @@ export class KnowledgeStore extends Store {
       "CREATE TABLE IF NOT EXISTS kb_mentions (project_id TEXT NOT NULL,connection_id TEXT NOT NULL,item_id TEXT NOT NULL,entity_key TEXT NOT NULL,evidence_json TEXT NOT NULL,PRIMARY KEY(project_id,connection_id,item_id,entity_key),FOREIGN KEY(project_id,connection_id,item_id) REFERENCES kb_observations(project_id,connection_id,item_id),FOREIGN KEY(project_id,entity_key) REFERENCES kb_entities(project_id,entity_key));" +
       "CREATE TABLE IF NOT EXISTS kb_assessments (project_id TEXT NOT NULL,entity_key TEXT NOT NULL,category TEXT NOT NULL,score INTEGER NOT NULL,confidence REAL NOT NULL,reasons_json TEXT NOT NULL,evaluator_id TEXT NOT NULL,updated_at TEXT NOT NULL,PRIMARY KEY(project_id,entity_key),FOREIGN KEY(project_id,entity_key) REFERENCES kb_entities(project_id,entity_key));" +
       "CREATE TABLE IF NOT EXISTS kb_assessment_history (id INTEGER PRIMARY KEY,project_id TEXT NOT NULL,entity_key TEXT NOT NULL,category TEXT NOT NULL,score INTEGER NOT NULL,confidence REAL NOT NULL,reasons_json TEXT NOT NULL,evaluator_id TEXT NOT NULL,recorded_at TEXT NOT NULL,FOREIGN KEY(project_id,entity_key) REFERENCES kb_entities(project_id,entity_key));" +
+      "CREATE TABLE IF NOT EXISTS kb_entity_versions (id INTEGER PRIMARY KEY,project_id TEXT NOT NULL,entity_key TEXT NOT NULL,connection_id TEXT,observation_id TEXT,snapshot_json TEXT NOT NULL,observed_at TEXT NOT NULL,FOREIGN KEY(project_id,entity_key) REFERENCES kb_entities(project_id,entity_key));" +
+      "CREATE INDEX IF NOT EXISTS kb_versions_entity ON kb_entity_versions(project_id,entity_key,id DESC);" +
+      "CREATE TABLE IF NOT EXISTS kb_entity_changes (id INTEGER PRIMARY KEY,project_id TEXT NOT NULL,entity_key TEXT NOT NULL,connection_id TEXT NOT NULL,observation_id TEXT NOT NULL,path TEXT NOT NULL,kind TEXT NOT NULL,before_json TEXT,after_json TEXT,observed_at TEXT NOT NULL,FOREIGN KEY(project_id,entity_key) REFERENCES kb_entities(project_id,entity_key));" +
+      "CREATE INDEX IF NOT EXISTS kb_changes_project ON kb_entity_changes(project_id,id DESC);" +
+      "CREATE TABLE IF NOT EXISTS kb_watch_alerts (id INTEGER PRIMARY KEY,change_id INTEGER NOT NULL REFERENCES kb_entity_changes(id),project_id TEXT NOT NULL,entity_key TEXT NOT NULL,rule_id TEXT NOT NULL,explanation TEXT NOT NULL,detected_at TEXT NOT NULL,UNIQUE(change_id,rule_id));" +
+      "CREATE INDEX IF NOT EXISTS kb_alerts_project ON kb_watch_alerts(project_id,id DESC);" +
+      "CREATE TABLE IF NOT EXISTS kb_observation_versions (id INTEGER PRIMARY KEY,project_id TEXT NOT NULL,connection_id TEXT NOT NULL,item_id TEXT NOT NULL,observation_json TEXT NOT NULL,content_hash TEXT NOT NULL,observed_at TEXT NOT NULL,FOREIGN KEY(project_id,connection_id,item_id) REFERENCES kb_observations(project_id,connection_id,item_id));" +
+      "CREATE INDEX IF NOT EXISTS kb_observation_history ON kb_observation_versions(project_id,connection_id,item_id,id DESC);" +
+
       "CREATE TABLE IF NOT EXISTS kb_reviews (id INTEGER PRIMARY KEY,project_id TEXT NOT NULL,entity_key TEXT NOT NULL,decision TEXT NOT NULL,reason TEXT NOT NULL,reviewed_at TEXT NOT NULL,legacy_review_id INTEGER UNIQUE,FOREIGN KEY(project_id,entity_key) REFERENCES kb_entities(project_id,entity_key));" +
       "CREATE TABLE IF NOT EXISTS kb_runs (id TEXT PRIMARY KEY,project_id TEXT NOT NULL,connection_id TEXT,status TEXT NOT NULL,started_at TEXT NOT NULL,ended_at TEXT,observations INTEGER NOT NULL DEFAULT 0,new_entities INTEGER NOT NULL DEFAULT 0,duplicates INTEGER NOT NULL DEFAULT 0,error TEXT);" +
       "CREATE TABLE IF NOT EXISTS kb_checkpoints (project_id TEXT NOT NULL,connection_id TEXT NOT NULL,cursor TEXT,updated_at TEXT NOT NULL,PRIMARY KEY(project_id,connection_id));" +
@@ -52,6 +64,28 @@ export class KnowledgeStore extends Store {
       this.db.exec("ALTER TABLE kb_connections ADD COLUMN config_hash TEXT NOT NULL DEFAULT ''");
     }
     this.migrateLegacy();
+    // Baselines for pre-v0.8 libraries. These are NOT synthetic change alerts:
+    // previous records are simply recorded as the initial known state.
+    const done=this.db.prepare(
+      "SELECT fingerprint FROM kb_migration_state WHERE name='entity-baselines-v0.8'"
+    ).get() as {fingerprint:string}|undefined;
+    if(!done){
+      this.db.exec("BEGIN IMMEDIATE");
+      try{
+        this.db.prepare(
+          "INSERT INTO kb_entity_versions(project_id,entity_key,snapshot_json,observed_at) "+
+          "SELECT e.project_id,e.entity_key,json_object('type',e.type,'title',e.title,'url',e.url,"+
+          "'attributes',json(e.attributes_json)),e.updated_at FROM kb_entities e "+
+          "WHERE NOT EXISTS(SELECT 1 FROM kb_entity_versions v WHERE "+
+          "v.project_id=e.project_id AND v.entity_key=e.entity_key)"
+        ).run();
+        this.db.prepare(
+          "INSERT OR IGNORE INTO kb_migration_state(name,fingerprint) VALUES('entity-baselines-v0.8','done')"
+        ).run();
+        this.db.exec("COMMIT");
+      }catch(error){this.db.exec("ROLLBACK");throw error;}
+    }
+
   }
   saveProject(project:ProjectDefinition):void{
     const date=now();
@@ -124,7 +158,7 @@ export class KnowledgeStore extends Store {
   }
   saveBatch(projectId:string,source:ProjectSource,items:Array<{
     observation:Observation;entities:Array<{draft:EntityDraft;assessment:Assessment}>;
-  }>,nextCursor:string|undefined,evaluatorId:string):{observations:number;newEntities:number;duplicates:number}{
+  }>,nextCursor:string|undefined,evaluatorId:string,watchRules:readonly ChangeRule[]=[]):{observations:number;newEntities:number;duplicates:number}{
     const count={observations:0,newEntities:0,duplicates:0};
     const date=now();
     this.db.exec("BEGIN IMMEDIATE");
@@ -149,25 +183,74 @@ export class KnowledgeStore extends Store {
         ).run(date,observation.title||null,observation.text||null,observation.url||null,
           JSON.stringify(observation.attributes||{}),JSON.stringify(observation.media||[]),
           projectId,source.id,observation.id);
+        // Immutable original evidence, once per distinct revision. A re-read of
+        // the same snapshot never produces an additional history entry.
+        const observationContent=JSON.stringify(observation);
+        const observationHash=hash(observationContent);
+        const latestObservation=this.db.prepare(
+          "SELECT content_hash FROM kb_observation_versions WHERE "+
+          "project_id=? AND connection_id=? AND item_id=? ORDER BY id DESC LIMIT 1"
+        ).get(projectId,source.id,observation.id) as {content_hash:string}|undefined;
+        if(latestObservation?.content_hash!==observationHash){
+          this.db.prepare(
+            "INSERT INTO kb_observation_versions(project_id,connection_id,item_id,observation_json,content_hash,observed_at) "+
+            "VALUES(?,?,?,?,?,?)"
+          ).run(projectId,source.id,observation.id,observationContent,observationHash,date);
+        }
         if(inserted.changes===0)count.duplicates++;
         count.observations++;
         for(const {draft,assessment} of entities){
           const oldEntity=this.db.prepare(
-            "SELECT type FROM kb_entities WHERE project_id=? AND entity_key=?"
-          ).get(projectId,draft.key) as {type:string}|undefined;
+            "SELECT type,title,url,attributes_json FROM kb_entities WHERE project_id=? AND entity_key=?"
+          ).get(projectId,draft.key) as {
+            type:string;title:string;url:string|null;attributes_json:string
+          }|undefined;
           if(oldEntity&&oldEntity.type!==draft.type){
             throw new Error("Entity identity reused for a different type");
           }
+          const previous:EntitySnapshot|undefined=oldEntity?snapshot({
+            type:oldEntity.type,title:oldEntity.title,url:oldEntity.url||undefined,
+            attributes:JSON.parse(oldEntity.attributes_json) as JsonRecord
+          }):undefined;
+          // Missing fields in partial updates mean "not supplied", not deleted.
+          // Explicit null values remain observable changes.
+          const next=snapshot({
+            type:draft.type,title:draft.title,url:draft.url||oldEntity?.url||undefined,
+            attributes:{...(previous?.attributes||{}),...(draft.attributes||{})}
+          });
+          const changes=diffSnapshots(previous,next);
           const entity=this.db.prepare(
             "INSERT OR IGNORE INTO kb_entities(project_id,entity_key,type,title,url,attributes_json,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?)"
-          ).run(projectId,draft.key,draft.type,draft.title,draft.url||null,
-            JSON.stringify(draft.attributes||{}),date,date);
+          ).run(projectId,draft.key,next.type,next.title,next.url,
+            JSON.stringify(next.attributes),date,date);
           if(entity.changes)count.newEntities++;
           else count.duplicates++;
-          this.db.prepare(
-            "UPDATE kb_entities SET type=?,title=?,url=?,attributes_json=?,updated_at=? WHERE project_id=? AND entity_key=?"
-          ).run(draft.type,draft.title,draft.url||null,JSON.stringify(draft.attributes||{}),
-            date,projectId,draft.key);
+          if(changes.length){
+            this.db.prepare(
+              "UPDATE kb_entities SET type=?,title=?,url=?,attributes_json=?,updated_at=? WHERE project_id=? AND entity_key=?"
+            ).run(next.type,next.title,next.url,JSON.stringify(next.attributes),
+              date,projectId,draft.key);
+            this.db.prepare(
+              "INSERT INTO kb_entity_versions(project_id,entity_key,connection_id,observation_id,snapshot_json,observed_at) "+
+              "VALUES(?,?,?,?,?,?)"
+            ).run(projectId,draft.key,source.id,observation.id,JSON.stringify(next),date);
+            for(const change of changes){
+              const created=this.db.prepare(
+                "INSERT INTO kb_entity_changes(project_id,entity_key,connection_id,observation_id,path,kind,before_json,after_json,observed_at) "+
+                "VALUES(?,?,?,?,?,?,?,?,?)"
+              ).run(projectId,draft.key,source.id,observation.id,change.path,change.kind,
+                change.before===undefined?null:JSON.stringify(change.before),
+                change.after===undefined?null:JSON.stringify(change.after),date);
+              const matches=matchingRules(change,previous,next,watchRules);
+              for(const match of matches){
+                this.db.prepare(
+                  "INSERT INTO kb_watch_alerts(change_id,project_id,entity_key,rule_id,explanation,detected_at) "+
+                  "VALUES(?,?,?,?,?,?)"
+                ).run(Number(created.lastInsertRowid),projectId,draft.key,match.rule.id,
+                  match.explanation,date);
+              }
+            }
+          }
           this.db.prepare(
             "INSERT INTO kb_mentions(project_id,connection_id,item_id,entity_key,evidence_json) VALUES(?,?,?,?,?) "+
             "ON CONFLICT(project_id,connection_id,item_id,entity_key) DO UPDATE SET evidence_json=excluded.evidence_json"
@@ -217,6 +300,55 @@ export class KnowledgeStore extends Store {
       this.db.exec("ROLLBACK");
       throw error;
     }
+  }
+  listChanges(projectId:string,options:{limit?:number;offset?:number;entityKey?:string}={}):ChangeEvent[]{
+    const limit=Number.isFinite(options.limit)?Math.max(1,Math.min(500,Math.floor(options.limit!))):100;
+    const offset=Number.isFinite(options.offset)?Math.max(0,Math.min(1000000,Math.floor(options.offset!))):0;
+    const rows=this.db.prepare(
+      "SELECT id,project_id,entity_key,connection_id,observation_id,path,kind,before_json,after_json,observed_at "+
+      "FROM kb_entity_changes WHERE project_id=? AND (? IS NULL OR entity_key=?) "+
+      "ORDER BY id DESC LIMIT ? OFFSET ?"
+    ).all(projectId,options.entityKey||null,options.entityKey||null,limit,offset) as Row[];
+    return rows.map(row=>({
+      id:Number(row.id),projectId:String(row.project_id),entityKey:String(row.entity_key),
+      connectionId:String(row.connection_id),observationId:String(row.observation_id),
+      path:String(row.path),kind:row.kind as ChangeEvent["kind"],
+      before:json(row.before_json,undefined as JsonValue|undefined),
+      after:json(row.after_json,undefined as JsonValue|undefined),
+      observedAt:String(row.observed_at)
+    }));
+  }
+  listAlerts(projectId:string,limit=100):WatchAlert[]{
+    const safeLimit=Number.isFinite(limit)?Math.max(1,Math.min(500,Math.floor(limit))):100;
+    const rows=this.db.prepare(
+      "SELECT a.id,a.project_id,a.entity_key,a.change_id,a.rule_id,a.explanation,a.detected_at,"+
+      "c.path,c.before_json,c.after_json FROM kb_watch_alerts a "+
+      "JOIN kb_entity_changes c ON c.id=a.change_id WHERE a.project_id=? "+
+      "ORDER BY a.id DESC LIMIT ?"
+    ).all(projectId,safeLimit) as Row[];
+    return rows.map(row=>({
+      id:Number(row.id),projectId:String(row.project_id),entityKey:String(row.entity_key),
+      changeId:Number(row.change_id),ruleId:String(row.rule_id),
+      explanation:String(row.explanation),detectedAt:String(row.detected_at),
+      path:String(row.path),before:json(row.before_json,undefined as JsonValue|undefined),
+      after:json(row.after_json,undefined as JsonValue|undefined)
+    }));
+  }
+  listVersions(projectId:string,entityKey:string,limit=50):Array<{
+    id:number;observedAt:string;connectionId:string|null;observationId:string|null;
+    snapshot:EntitySnapshot
+  }>{
+    const size=Number.isFinite(limit)?Math.max(1,Math.min(100,Math.floor(limit))):50;
+    const rows=this.db.prepare(
+      "SELECT id,observed_at,connection_id,observation_id,snapshot_json FROM kb_entity_versions "+
+      "WHERE project_id=? AND entity_key=? ORDER BY id DESC LIMIT ?"
+    ).all(projectId,entityKey,size) as Row[];
+    return rows.map(row=>({
+      id:Number(row.id),observedAt:String(row.observed_at),
+      connectionId:row.connection_id===null?null:String(row.connection_id),
+      observationId:row.observation_id===null?null:String(row.observation_id),
+      snapshot:JSON.parse(String(row.snapshot_json)) as EntitySnapshot
+    }));
   }
   listEntities(projectId:string,opts:{limit?:number;offset?:number;type?:string;q?:string;minScore?:number}={}):KnowledgeEntity[]{
     const limit=Number.isFinite(opts.limit)?Math.max(1,Math.min(500,Math.floor(opts.limit!))):100;
