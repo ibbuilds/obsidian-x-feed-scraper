@@ -71,6 +71,22 @@ test("shipped Obsidian collector boots, authenticates and exports without changi
     assert.equal(imported.status,200);
     const after=await (await fetch(url+"/status",{headers:auth})).json() as {posts:number};
     assert.equal(after.posts,5);
+    const extended=await fetch(url+"/import",{method:"POST",
+      headers:{...auth,"content-type":"application/json"},
+      body:JSON.stringify({posts:[
+        {id:"manual-image-only",url:"https://x.com/example/status/246",author:"Artist",username:"artist",
+          text:"Visual inspiration without project URL",images:["https://example.org/screenshot.png"]},
+        {id:"manual-quoted-link",url:"https://x.com/example/status/247",author:"Creator",username:"creator",
+          text:"Quoted project below",quotedText:"Open source design project https://example.org/quoted-resource",
+          quotedUrls:["https://example.org/linked-in-quote"]}
+      ]})
+    });
+    assert.equal(extended.status,200);
+    const importedDetails=await extended.json() as {result:{visualOnly:number;newSources:number}};
+    assert.equal(importedDetails.result.visualOnly,1);
+    assert.equal(importedDetails.result.newSources,2);
+    assert.equal(readdirSync(join(vault,"X Feed Scraper","Visuals")).length,2);
+    assert.equal(readFileSync(join(vault,"References.md"),"utf8"),references);
   }finally{
     await bridge.stop();
     rmSync(root,{recursive:true,force:true});
