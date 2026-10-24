@@ -1,10 +1,11 @@
 import {test} from "node:test";
 import assert from "node:assert/strict";
 import {mkdtempSync,rmSync} from "node:fs";
+import {spawnSync} from "node:child_process";
 import {tmpdir} from "node:os";
 import {join,resolve} from "node:path";
 import {createDefaultRegistry} from "../packages/core/extensions.ts";
-import {parseProject} from "../packages/core/project-config.ts";
+import {parseProject,loadProject} from "../packages/core/project-config.ts";
 import {runProject} from "../packages/core/engine.ts";
 import {KnowledgeStore} from "../packages/storage/knowledge.ts";
 
@@ -97,5 +98,24 @@ test("MCP refuses relative executable and requires selected tools",async()=>{
   const result=await runProject(db,p,createDefaultRegistry());
   assert.equal(result.success,false);
   assert.match(result.runs[0].error||"",/absolute executable path/);
+ }finally{rmSync(dir,{recursive:true,force:true});}
+});
+
+test("MCP project manifest works from an unrelated working directory without Obsidian",()=>{
+ const dir=mkdtempSync(join(tmpdir(),"knowledge-mcp-cwd-"));
+ const db=join(dir,"library.sqlite");
+ try{
+  const manifest=resolve("examples/mcp/project.json");
+  const project=loadProject(manifest);
+  assert.equal(project.sources[0].adapter,"mcp-stdio");
+  assert.ok(String(project.sources[0].config.args).includes("mock-mcp-server.cjs"));
+  const cli=resolve("apps/collector/cli.ts");
+  const child=spawnSync(process.execPath,[
+    "--experimental-strip-types",cli,"project","sync","--project",manifest,"--db",db
+  ],{cwd:dir,encoding:"utf8",timeout:20000});
+  assert.equal(child.status,0,child.stderr||child.stdout);
+  const result=JSON.parse(child.stdout) as {success:boolean;newEntities:number};
+  assert.equal(result.success,true);
+  assert.equal(result.newEntities,2);
  }finally{rmSync(dir,{recursive:true,force:true});}
 });
