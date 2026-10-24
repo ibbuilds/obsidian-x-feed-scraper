@@ -100,19 +100,56 @@ const self:Processor={
       evidence:[{signal:"source-observation",detail:"Recorded by the configured adapter",confidence:1}]}];
   }
 };
+interface CompiledKeywordTerms {
+  includeSource:string[];
+  excludeSource:string[];
+  include:string[];
+  includeLower:string[];
+  excludeLower:string[];
+}
+function sameTerms(values:readonly string[],saved:readonly string[]):boolean{
+  if(values.length!==saved.length)return false;
+  for(let i=0;i<values.length;i++)if(values[i]!==saved[i])return false;
+  return true;
+}
+/**
+ * Normalize and lowercase keywords once per policy revision and collection.
+ * A cheap primitive-element comparison catches even in-place edits to arrays
+ * while avoiding repeated JSON stringification and deduplication. No cache
+ * outlives its run signal.
+ */
+const keywordTermsByRun=new WeakMap<AbortSignal,WeakMap<object,CompiledKeywordTerms>>();
+function compiledKeywords(signal:AbortSignal,policy:{
+  includeKeywords:string[];excludeKeywords:string[]
+}):CompiledKeywordTerms{
+  let policies=keywordTermsByRun.get(signal);
+  if(!policies){policies=new WeakMap();keywordTermsByRun.set(signal,policies);}
+  const prior=policies.get(policy);
+  if(prior&&Array.isArray(policy.includeKeywords)&&Array.isArray(policy.excludeKeywords)&&
+    sameTerms(policy.includeKeywords,prior.includeSource)&&
+    sameTerms(policy.excludeKeywords,prior.excludeSource))return prior;
+  // Always validate a changed policy, including malformed runtime SDK inputs.
+  const include=normalizeKeywords(policy.includeKeywords,"include keywords");
+  const exclude=normalizeKeywords(policy.excludeKeywords,"exclude keywords");
+  const terms={includeSource:policy.includeKeywords.slice(),
+    excludeSource:policy.excludeKeywords.slice(),include,
+    includeLower:include.map(x=>x.toLowerCase()),
+    excludeLower:exclude.map(x=>x.toLowerCase())};
+  policies.set(policy,terms);
+  return terms;
+}
 const keyword:Evaluator={
   id:"keyword",
-  assess({project},observation,entity){
-    // SDK callers can construct a ProjectDefinition without parseProject.
-    const include=normalizeKeywords(project.policy.includeKeywords,"include keywords");
-    const exclude=normalizeKeywords(project.policy.excludeKeywords,"exclude keywords");
+  assess({project,signal},observation,entity){
+    // SDK callers may edit a policy in place: signature invalidation keeps the
+    // same observable assessment and invalid-input behavior after every edit.
+    const {include,excludeLower,includeLower}=compiledKeywords(signal,project.policy);
     const corpus=[observation.title||"",observation.text||"",entity.title,
       JSON.stringify(entity.attributes||{})].join(" ").toLowerCase();
-    const negative=exclude.filter(word=>corpus.includes(word.toLowerCase()));
-    if(negative.length){
+    if(excludeLower.some(term=>corpus.includes(term))){
       return {category:"excluded",score:0,confidence:0.9,reasons:["Explicit exclusion term matched"]};
     }
-    const matched=include.filter(word=>corpus.includes(word.toLowerCase()));
+    const matched=include.filter((_,i)=>corpus.includes(includeLower[i]));
     const hasCriteria=include.length>0;
     const base=hasCriteria?0:50;
     const description=typeof entity.attributes?.description==="string"?

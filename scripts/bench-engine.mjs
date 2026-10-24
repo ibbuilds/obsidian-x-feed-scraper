@@ -14,6 +14,18 @@ const db=join(root,"perf.sqlite"),file=join(root,"observations.json");
 const out={count,reviews,phases:{},plan:[],node:process.version};
 const time=(key,fn)=>{const start=performance.now();const value=fn();out.phases[key]=Math.round((performance.now()-start)*100)/100;return value;};
 const timeAsync=async(key,fn)=>{const start=performance.now();const value=await fn();out.phases[key]=Math.round((performance.now()-start)*100)/100;return value;};
+const medianRead=(key,fn)=>{
+  fn();
+  const samples=[];
+  for(let i=0;i<5;i++){
+    const start=performance.now();
+    fn();
+    samples.push(performance.now()-start);
+  }
+  samples.sort((a,b)=>a-b);
+  out.phases[key]=Math.round(samples[2]*100)/100;
+};
+
 try{
  const data=Array.from({length:count},(_,i)=>({id:"id-"+String(i).padStart(6,"0"),type:"catalog-item",title:"Curated record "+i,text:"Structured knowledge record",attributes:{priority:i%5,description:"synthetic ".repeat(6)}}));
  writeFileSync(file,JSON.stringify(data));
@@ -27,8 +39,8 @@ try{
    for(let i=0;i<reviews;i++)insert.run(project.id,"@fixture:catalog-item:id-"+String(i%count).padStart(6,"0"),"approved","Synthetic review","2026-01-01T00:00:00.000Z");
    store.db.exec("COMMIT");
   }catch(e){store.db.exec("ROLLBACK");throw e;}});
-  time("listEntitiesMs",()=>{let size=0;for(let o=0;o<count;o+=500)size+=store.listEntities(project.id,{limit:500,offset:o}).length;if(size!==count)throw Error("Lost entities");});
-  time("getEvidenceMs",()=>{for(let i=0;i<Math.min(300,count);i++){const key="@fixture:catalog-item:id-"+String(i).padStart(6,"0");if(!store.entityEvidence(project.id,key))throw Error("Missing evidence");}});
+  medianRead("listEntitiesMs",()=>{let size=0;for(let o=0;o<count;o+=500)size+=store.listEntities(project.id,{limit:500,offset:o}).length;if(size!==count)throw Error("Lost entities");});
+  medianRead("getEvidenceMs",()=>{for(let i=0;i<Math.min(300,count);i++){const key="@fixture:catalog-item:id-"+String(i).padStart(6,"0");if(!store.entityEvidence(project.id,key))throw Error("Missing evidence");}});
   out.plan=store.db.prepare("EXPLAIN QUERY PLAN SELECT decision FROM kb_reviews WHERE project_id=? AND entity_key=? ORDER BY id DESC LIMIT 1").all(project.id,"@fixture:catalog-item:id-000000").map(row=>String(row.detail));
  }finally{store.close();}
  time("reopenMs",()=>{const s=new KnowledgeStore(db);try{if(!s.listEntities(project.id,{limit:10}).length)throw Error("Reopen lost records");}finally{s.close();}});

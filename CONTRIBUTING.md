@@ -13,6 +13,8 @@ Reproducible local performance profiles (synthetic; no network or vault access):
     node --experimental-strip-types scripts/bench-pagination.mjs
     node --experimental-strip-types scripts/bench-repeat.mjs
     node --experimental-strip-types scripts/bench-reprocess.mjs
+    node --experimental-strip-types scripts/bench-json-compare.mjs
+    node --experimental-strip-types scripts/bench-keyword.mjs
 
 GitHub CI additionally runs the real Obsidian Desktop app in an isolated Linux vault and Node integration tests on Linux/macOS/Windows.
 

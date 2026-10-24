@@ -8,7 +8,7 @@ The project is a **data engine**, not an X-specific scraper, bookmarking app, Ob
 
 ## Quick start — one file, zero setup for the offline demo
 
-**Requirement:** Node.js **22.16+**. Download [`source-scraper.mjs` from v0.12.0-beta.1](https://github.com/ibbuilds/source-scraper/releases/download/v0.12.0-beta.1/source-scraper.mjs), then:
+**Requirement:** Node.js **22.16+**. Download [`source-scraper.mjs` from v0.13.0-beta.1](https://github.com/ibbuilds/source-scraper/releases/download/v0.13.0-beta.1/source-scraper.mjs), then:
 
 ```sh
 node source-scraper.mjs init --dir ./demo
@@ -88,22 +88,24 @@ node dist/source-scraper.mjs init --dir ./demo
 npm test
 ```
 
-The `source-scraper-0.12.0.tgz` asset is also provided for users who prefer a local npm package. **The package has not been published to npm;** do not confuse this tarball with a public registry listing.
+The `source-scraper-0.13.0.tgz` asset is also provided for users who prefer a local npm package. **The package has not been published to npm;** do not confuse this tarball with a public registry listing.
 
 ## Performance and release policy
 
-Version 0.12 builds on the 0.11 SQLite indexes and JSON paging optimizations:
-identical observations and assessments now avoid redundant database writes, and
-offline reevaluation commits in bounded 100-entity transactions. On one offline
-benchmark, rereading 1,800 records was ~2× faster and reevaluating 2,400
-records was ~6× faster, without modifying human reviews or historical source
-snapshots. External source latency and hardware can change these results.
+The 0.13 release improves **nested JSON comparisons** (without sorting or
+stringifying both trees), caches validated relevance keywords while still
+detecting in-place filter changes, and iterates SQLite entities incrementally
+during offline reprocessing to bound transient memory.
 
-See the [performance comparison](docs/performance.md) for reproducible
-measurements and the optimization experiment that was **discarded** after
-showing inconsistent gains. The GitHub **Releases** list intentionally contains
-**only the current tested release**; historical Git tags and commits remain.
-A new release is verified before the previous download is deleted.
+On the [same-runner synthetic profile](docs/performance.md), 16,000 nested
+JSON equality tests were about 15× faster, nested diff detection about 13×,
+and 65,000 keyword assessments about 1.4× faster. Those are targeted
+CPU-bound tests, **not universal speedups of scraping, network access or the
+whole engine**. Full unit, integration and safety tests remain mandatory.
+
+GitHub **Releases** intentionally has **one current tested release**; old Git
+tags and commits remain. The release workflow verifies new downloads before
+removing the previous GitHub Release.
 
 ## Optional integrations
 
