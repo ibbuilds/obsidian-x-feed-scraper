@@ -1,0 +1,58 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/ibbuilds/source-scraper/blob/main/schemas/observation-v1.schema.json",
+  "title": "Source Scraper normalized observation v1",
+  "description": "A source adapter yields normalized observations; sources may lack web links.",
+  "type": "object",
+  "required": [
+    "id",
+    "type"
+  ],
+  "properties": {
+    "id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 300
+    },
+    "type": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_-]{1,63}$"
+    },
+    "title": {
+      "type": "string",
+      "maxLength": 2000
+    },
+    "text": {
+      "type": "string",
+      "maxLength": 20000
+    },
+    "url": {
+      "type": "string",
+      "format": "uri"
+    },
+    "urls": {
+      "type": "array",
+      "maxItems": 100,
+      "items": {
+        "type": "string",
+        "format": "uri"
+      }
+    },
+    "media": {
+      "type": "array",
+      "maxItems": 100,
+      "items": {
+        "type": "string",
+        "format": "uri"
+      }
+    },
+    "occurredAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "attributes": {
+      "type": "object"
+    }
+  },
+  "additionalProperties": false
+}
