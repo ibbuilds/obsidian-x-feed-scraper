@@ -18,8 +18,10 @@ const links:Processor={
   run(_context,observation,previous){
     const added:EntityDraft[]=candidates(observation).map(url=>{
       const parsed=new URL(url);
-      const label=decodeURIComponent(parsed.pathname.split("/").filter(Boolean).pop()||parsed.hostname)
-        .replace(/[-_]/g," ").slice(0,200);
+      const slug=parsed.pathname.split("/").filter(Boolean).pop()||parsed.hostname;
+      let readable=slug;
+      try{readable=decodeURIComponent(slug);}catch{/* Keep URL-encoded slug. */}
+      const label=readable.replace(/[-_]/g," ").slice(0,200);
       return {key:url,type:"web-resource",url,title:label,
         evidence:[{signal:"observed-url",detail:"Observed directly in the source item",confidence:1}]};
     });
