@@ -1,5 +1,5 @@
 import {resolve} from "node:path";
-import {createDefaultRegistry} from "../../packages/core/extensions.ts";
+import {createObsidianRegistry} from "../../packages/integrations/obsidian-registry.ts";
 import {loadProject} from "../../packages/core/project-config.ts";
 import {runProject,reprocessProject} from "../../packages/core/engine.ts";
 import {exportProject} from "../../packages/core/export-project.ts";
@@ -45,7 +45,7 @@ export async function projectCommand(args:string[]):Promise<void>{
   const path=opt(args,"project");
   const project=path?loadProject(resolve(path)):undefined;
   const extensions=opt(args,"extension")?[resolve(opt(args,"extension")!)]:[];
-  const registry=createDefaultRegistry(extensions);
+  const registry=createObsidianRegistry(extensions);
   const output=(value:unknown)=>console.log(JSON.stringify(value,null,2));
   if(action==="sync"){
     if(!project)throw new Error("--project is required");
