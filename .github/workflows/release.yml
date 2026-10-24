@@ -53,19 +53,19 @@ jobs:
           TAG: ${{ steps.release.outputs.tag }}
         run: |
           set -euo pipefail
-          mapfile -t releases < <(gh release list --limit 1000 --json tagName --jq '.[].tagName')
-          for old in "${releases[@]}"; do
-            if [[ "$old" == "$TAG" ]]; then continue; fi
+          # Capture output directly: process substitution could mask GitHub API errors.
+          releases=$(gh release list --limit 1000 --json tagName --jq '.[].tagName')
+          while IFS= read -r old; do
+            [[ -z "$old" || "$old" == "$TAG" ]] && continue
             echo "Deleting superseded GitHub Release $old (preserving its Git tag)"
             gh release delete "$old" --yes
-          done
-          mapfile -t remaining < <(gh release list --limit 1000 --json tagName --jq '.[].tagName')
-          for old in "${remaining[@]}"; do
-            if [[ "$old" != "$TAG" ]]; then
-              echo "ERROR: superseded release still published: $old"
-              exit 1
-            fi
-          done
+          done <<< "$releases"
+          remaining=$(gh release list --limit 1000 --json tagName --jq '.[].tagName')
+          while IFS= read -r old; do
+            [[ -z "$old" || "$old" == "$TAG" ]] && continue
+            echo "ERROR: superseded release still published: $old"
+            exit 1
+          done <<< "$remaining"
       - name: Publish tested Source Scraper CLI and optional Obsidian integration
         env:
           GH_TOKEN: ${{ github.token }}
