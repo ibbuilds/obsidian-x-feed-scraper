@@ -9,7 +9,7 @@ Discovery Engine now stores **immutable versions of source observations and stru
 - **Any other entity type**: watch nested JSON fields such as stock availability, security severity, documentation version or project activity using the same engine.
 - **Manual review and auditability**: all field changes, original observation revisions, assessment history and optional watch alerts stay in SQLite. Existing human approvals remain separate.
 
-**Not supported or implied:** universal scraping of arbitrary websites, credentials, bypassing anti-bot systems, legal access to every source, automatic semantic reasoning about every field, or delivery of SMS/email/push notifications. Rules currently create **locally queryable watch alerts**, visible in the Obsidian sidebar and CLI. Notifications require an explicit output adapter.
+**Not supported or implied:** universal scraping of arbitrary websites, credentials, bypassing anti-bot systems, legal access to every source, or automatic semantic reasoning about every field. Rules create **locally queryable watch alerts**, visible in the Obsidian sidebar and CLI. An explicitly enabled `webhook` output can deliver them to an authorized HTTPS receiver; direct email/SMS accounts and push services are not bundled. See [Webhook delivery](webhooks.md).
 
 ## Test the working offline price monitor
 
@@ -90,7 +90,7 @@ The guided Obsidian project wizard supports common alert types. An advanced JSON
 - `kb_watch_alerts` records matching rules with explanations; creation events are distinguished from updates.
 - Every state change, corresponding alert, and next source cursor are written atomically in the existing SQLite transaction. Failed pages do not advance the cursor.
 - Reprocessing relevance rules is separate and **does not** fabricate new source changes or clear human reviews.
-- Repeated unchanged snapshots are idempotent.
+- Repeated unchanged snapshots are idempotent. An unchanged active mention cannot overwrite the entity's latest state or repeat change alerts, even when several sources disagree. A newly changed claim can update that state in collection order; the engine does not infer which conflicting source is objectively correct.
 - Each engine execution has its own snapshot and metadata cache, including when an SDK caller reuses one cancellation signal across runs or projects. Pagination within one execution still shares its snapshot.
 - Cancellation is checked before committing a page. Previously committed pages remain available, but a page returned after cancellation cannot write history, alerts or a new checkpoint.
 
@@ -103,3 +103,5 @@ To inspect from the CLI:
 The authenticated loopback API also exposes GET `/project/changes`, `/project/alerts` and `/project/versions`. In Obsidian, expand **Monitoring** in the active project sidebar.
 
 The source does not report deletions, closure or unavailability unless an adapter returns explicit evidence. Record identity must remain stable across runs; developers should include merchant/site in product identity when equivalent SKUs occur across unrelated stores. An alert is a verified **change in collected source data**, not independent verification that the underlying claim is correct.
+
+When using `observation-entity` with several providers, set a distinct `source.config.entityNamespace` for each identity domain. `examples/multi-source-jobs/project.json` demonstrates two unrelated boards that both publish local ID `123`; they remain separate entities. Existing projects retain their old keys, and legacy cross-source collisions now fail instead of silently mixing histories.

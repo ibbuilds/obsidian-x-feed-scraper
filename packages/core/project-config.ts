@@ -24,6 +24,25 @@ function keys(v:unknown,name:string,max=60):string[]{
   }
   return v as string[];
 }
+/** Invalid terms must never silently become an unfiltered project. */
+export function normalizeKeywords(value:unknown,name="research keywords"):string[]{
+  const seen=new Set<string>();
+  const normalized:string[]=[];
+  for(const term of keys(value,name)){
+    const trimmed=term.trim();
+    if(!trimmed)throw new Error("Invalid "+name+": terms must not be empty");
+    const identity=trimmed.toLowerCase();
+    if(!seen.has(identity)){
+      seen.add(identity);
+      normalized.push(trimmed);
+    }
+  }
+  return normalized;
+}
+/** Source-scoped identities are opt-in so existing entity keys stay stable. */
+export function entityNamespace(value:unknown):string|undefined{
+  return value===undefined?undefined:id(value,"entity namespace");
+}
 function jsonValue(value:unknown,depth=0):JsonValue{
   if(depth>9)throw new Error("JSON attributes too deeply nested");
   if(value===null||typeof value==="string"||typeof value==="boolean")return value;
@@ -131,8 +150,10 @@ export function parseProject(raw:unknown):ProjectDefinition{
   if(!Array.isArray(outputs)||outputs.length>10)throw new Error("Invalid project outputs");
   const normalizedSources=sources.map((x:unknown)=>{
     const entry=object(x);
+    const config=jsonRecord(entry.config??{});
+    entityNamespace(config.entityNamespace);
     return {id:id(entry.id,"connection id"),adapter:id(entry.adapter,"adapter id"),
-      config:jsonRecord(entry.config??{})};
+      config};
   });
   if(new Set(normalizedSources.map(x=>x.id)).size!==normalizedSources.length)throw new Error("Duplicate connection ids");
   const normalizedOutputs=outputs.map((x:unknown)=>{
@@ -180,8 +201,8 @@ export function parseProject(raw:unknown):ProjectDefinition{
     pipeline:pipeline.map(x=>id(x,"processor id")),evaluator:id(evaluator,"evaluator id"),
     outputs:normalizedOutputs,entitySchemas:schemas,watch,
     policy:{
-      includeKeywords:keys(rules.includeKeywords??[],"include keywords"),
-      excludeKeywords:keys(rules.excludeKeywords??[],"exclude keywords"),
+      includeKeywords:normalizeKeywords(rules.includeKeywords??[],"include keywords"),
+      excludeKeywords:normalizeKeywords(rules.excludeKeywords??[],"exclude keywords"),
       minimumScore:minimum
     }};
 }

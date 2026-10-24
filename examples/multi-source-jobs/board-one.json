@@ -1,0 +1,13 @@
+[
+  {
+    "id": "123",
+    "type": "job-listing",
+    "title": "Frontend Engineer",
+    "url": "https://example.org/board-one/123",
+    "attributes": {
+      "company": "Example One",
+      "location": "Remote",
+      "status": "open"
+    }
+  }
+]

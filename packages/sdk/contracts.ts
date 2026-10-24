@@ -49,6 +49,9 @@ export interface Assessment {
 export interface ProjectSource {
   id:string;
   adapter:string;
+  /** Optional config.entityNamespace scopes observation-entity keys. Keep it
+   * stable; omitting it preserves legacy type:id keys. Shared explicit values
+   * deliberately identify the same entities across source connections. */
   config:JsonRecord;
 }
 export interface ProjectOutput {
@@ -120,6 +123,8 @@ export interface KnowledgeEntity {
 }
 export interface ExportContext {
   project:ProjectDefinition;
+  /** Stable configured output identity, supplied by exportProject. */
+  outputId?:string;
   records:KnowledgeEntity[];
   config:JsonRecord;
   databasePath:string;
@@ -127,6 +132,8 @@ export interface ExportContext {
 }
 export interface OutputAdapter {
   id:string;
+  /** Declare true only when export performs no external network operations. */
+  offline?:boolean;
   export(context:ExportContext):Promise<unknown>|unknown;
 }
 export interface Extension {

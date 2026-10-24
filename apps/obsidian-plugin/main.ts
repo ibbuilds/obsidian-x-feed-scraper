@@ -309,14 +309,15 @@ class SourceView extends ItemView {
               content.empty();
               const proof=raw as {
                 mentions:Array<{connectionId:string;itemId:string;title?:string;
-                  url?:string;evidence?:Array<{signal:string;detail:string}>}>;
+                  url?:string;active?:boolean;evidence?:Array<{signal:string;detail:string}>}>;
                 reviews:Array<{decision:string;reason:string;date:string}>;
                 assessments:Array<{score:number;confidence:number;evaluatorId:string;date:string}>;
               };
               content.createEl("h6",{text:"Original observations ("+proof.mentions.length+")"});
               for(const observation of proof.mentions.slice(0,25)){
                 const item=content.createEl("p",{text:observation.connectionId+
-                  " · "+(observation.title||observation.itemId)});
+                  " · "+(observation.title||observation.itemId)+
+                  (observation.active===false?" · historical mention":" · current mention")});
                 if(observation.url)external(item,"View original",observation.url);
                 for(const line of observation.evidence||[]){
                   content.createEl("p",{cls:"xfs-meta",text:
@@ -350,13 +351,17 @@ class SourceView extends ItemView {
           }
         }
         const monitor=generic.createEl("details");
-        const [alerts,changes]=await Promise.all([
+        const [alerts,changes,deliveries]=await Promise.all([
           this.plugin.call("/project/alerts?project="+encodeURIComponent(active)+
             "&limit=30") as Promise<Array<{id:number;entityKey:string;ruleId:string;
               explanation:string;detectedAt:string;path:string;before?:unknown;after?:unknown}>>,
           this.plugin.call("/project/changes?project="+encodeURIComponent(active)+
             "&limit=40") as Promise<Array<{id:number;entityKey:string;path:string;
-              kind:string;observedAt:string;before?:unknown;after?:unknown}>>
+              kind:string;observedAt:string;before?:unknown;after?:unknown}>>,
+          this.plugin.call("/project/deliveries?project="+encodeURIComponent(active)) as Promise<Array<{
+            outputId:string;counts:{pending:number;delivered:number;failed:number;exhausted:number};
+            recent:Array<{alertId:number;status:string;attempts:number;lastError:string|null}>
+          }>>
         ]);
         monitor.createEl("summary",{text:"Monitoring: "+alerts.length+
           " recent alerts · "+changes.length+" recent changes"});
@@ -381,6 +386,20 @@ class SourceView extends ItemView {
           }
         }else monitor.createEl("p",{text:"No changes recorded yet. "+
           "Snapshot sources recheck the same record identities on subsequent collections."});
+        monitor.createEl("h5",{text:"Alert delivery"});
+        if(!deliveries.length){
+          monitor.createEl("p",{cls:"xfs-muted",text:"External delivery has not been activated for this project. Alerts stay in this library."});
+        }
+        for(const delivery of deliveries){
+          const counts=delivery.counts;
+          monitor.createEl("p",{text:delivery.outputId+" · "+counts.delivered+
+            " delivered · "+counts.pending+" interrupted · "+counts.failed+
+            " retryable · "+counts.exhausted+" stopped after retry limit"});
+          for(const item of delivery.recent.filter(item=>item.lastError).slice(0,3)){
+            monitor.createEl("p",{cls:"xfs-meta",text:"Alert "+item.alertId+" · "+
+              item.status+" · "+item.attempts+" attempts · "+item.lastError});
+          }
+        }
         const runs=await this.plugin.call("/project/runs?project="+
           encodeURIComponent(active)) as Array<{connection_id:string;status:string;
           started_at:string;observations:number;new_entities:number;error?:string}>;
@@ -681,7 +700,13 @@ export default class ScraperPlugin extends Plugin {
     for(const item of results){
       if(!item||typeof item!=="object")continue;
       const data=item as {created?:number;updated?:number;removed?:number;
-        conflicts?:number;conflictPaths?:string[]};
+        conflicts?:number;conflictPaths?:string[];enabled?:boolean;
+        attempted?:number;delivered?:number;failed?:number;budgetReached?:boolean};
+      if(data.enabled===true&&((data.attempted||0)>0||data.budgetReached)){
+        new Notice("Alerts: "+(data.delivered||0)+" delivered, "+(data.failed||0)+
+          " failed attempts."+(data.budgetReached?" Delivery budget reached; later exports resume.":"")+
+          ((data.failed||0)>0?" See Monitoring → Alert delivery.":""),8000);
+      }
       const summary="Notes: "+(data.created||0)+" created, "+(data.updated||0)+" updated";
       if(data.conflicts){
         new Notice(summary+"; "+data.conflicts+" edits preserved. "+

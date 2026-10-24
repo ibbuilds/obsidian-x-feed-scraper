@@ -23,6 +23,7 @@ test("packaged collector serves autonomous generic projects through the authenti
   const rootUrl="http://127.0.0.1:"+bridge.port;
   const auth={authorization:"Bearer "+bridge.token};
   assert.equal((await fetch(rootUrl+"/projects")).status,401);
+  assert.equal((await fetch(rootUrl+"/project/deliveries")).status,401);
   const before=await fetch(rootUrl+"/status",{headers:auth});
   assert.equal((await before.json() as {activeProjectId:string}).activeProjectId,"frontend-discovery");
   const run=await fetch(rootUrl+"/project/sync",{method:"POST",headers:auth});
@@ -67,6 +68,10 @@ test("packaged collector serves autonomous generic projects through the authenti
   assert.equal(recalc.status,200);
   const projects=await (await fetch(rootUrl+"/projects",{headers:auth})).json() as Array<{id:string}>;
   assert.ok(projects.some(p=>p.id==="frontend-discovery"));
+  const deliveryStatus=await fetch(rootUrl+"/project/deliveries?project=frontend-discovery",{headers:auth});
+  assert.equal(deliveryStatus.status,200);
+  assert.deepEqual(await deliveryStatus.json(),[],
+    "Reading delivery status must not enable an external output or require a receiver");
   const folder=join(vault,"Discovery Engine","frontend-discovery");
   assert.equal(existsSync(folder),true);
   assert.ok(readdirSync(folder).some(name=>name.endsWith(".md")));

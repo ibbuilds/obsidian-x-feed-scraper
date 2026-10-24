@@ -15,6 +15,7 @@ import {createDefaultRegistry} from "../../packages/core/extensions.ts";
 import {runProject,reprocessProject} from "../../packages/core/engine.ts";
 import {exportProject} from "../../packages/core/export-project.ts";
 import {KnowledgeStore} from "../../packages/storage/knowledge.ts";
+import {getWebhookDeliveryStatus} from "../../packages/outputs/webhook.ts";
 
 export interface ServerOptions {
   db:string;profile:Profile;fixture?:string;feed?:string;vault?:string;references?:string;
@@ -149,7 +150,7 @@ export function startServer(config:ServerOptions):ReturnType<typeof createServer
     try{
       const result=await reprocessProject(config.db,project,registry);
       const exports=project.outputs.length?
-        await exportProject(config.db,project,registry,config.vault):null;
+        await exportProject(config.db,project,registry,config.vault,{localOnly:true}):null;
       return {result,exports};
     }finally{busy=false;}
   };
@@ -264,6 +265,9 @@ export function startServer(config:ServerOptions):ReturnType<typeof createServer
           }else if(url.pathname==="/project/alerts"){
             json(res,200,knowledge.listAlerts(projectId,
               Number(url.searchParams.get("limit")||50)));
+          }else if(url.pathname==="/project/deliveries"){
+            json(res,200,getWebhookDeliveryStatus(config.db,projectId,
+              url.searchParams.get("output")||undefined));
           }else if(url.pathname==="/project/versions"){
             const key=url.searchParams.get("key")||"";
             if(!key||key.length>1000){

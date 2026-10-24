@@ -217,7 +217,7 @@ export const mcpStdioSource:SourceAdapter={
       const metadata={
         "io.modelcontextprotocol/protocolVersion":"2026-07-28",
         "io.modelcontextprotocol/clientCapabilities":{},
-        "io.modelcontextprotocol/clientInfo":{name:"discovery-engine",version:"0.8.0"}
+        "io.modelcontextprotocol/clientInfo":{name:"discovery-engine",version:"0.9.0"}
       };
       let modern=false;
       if(config.protocol!=="legacy"){
@@ -235,7 +235,7 @@ export const mcpStdioSource:SourceAdapter={
         if(config.protocol==="modern")throw new Error("MCP server lacks protocol 2026-07-28");
         const handshake=record(await peer.call("initialize",{
           protocolVersion:"2025-11-25",
-          capabilities:{},clientInfo:{name:"discovery-engine",version:"0.8.0"}
+          capabilities:{},clientInfo:{name:"discovery-engine",version:"0.9.0"}
         }));
         if(typeof handshake.protocolVersion!=="string"||
           !/^202[45]-\d{2}-\d{2}$/.test(handshake.protocolVersion)){

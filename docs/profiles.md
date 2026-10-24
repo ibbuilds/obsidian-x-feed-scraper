@@ -14,7 +14,7 @@ Before accepting a domain configuration, record what an entity represents, its s
 
 | Criterion | Acceptance case | Current boundary |
 | --- | --- | --- |
-| Identity and deduplication | Equivalent observations yield one entity with both provenances; unrelated records remain separate even when providers reuse a local ID | URL normalization and project-scoped entity keys exist. `observation-entity` uses `type:id`, so overlapping provider IDs need separate projects or a namespaced custom processor; see the SDK |
+| Identity and deduplication | Equivalent observations yield one entity with both provenances; unrelated records remain separate even when providers reuse a local ID | URL normalization, project-scoped keys and optional `config.entityNamespace` are tested. Legacy cross-source key collisions fail explicitly; existing keys/reviews are preserved |
 | Traceable evidence | Each saved entity resolves to its source observation; a page claim, observed link and human approval remain distinguishable | Observation provenance and immutable ingestion revisions exist. `Evidence` contains signal/detail/confidence, not a structured per-claim source URL, verification date or license scope |
 | Relevance and false positives | Label relevant, irrelevant, ambiguous, explicitly excluded and insufficient-evidence cases before evaluation; compare predicted inclusion with those labels | The generic `keyword` evaluator is deterministic and heuristic. It is not a calibrated measure of usefulness, visual quality or source truth |
 | License and access | Missing evidence remains unknown; a declared license is traceable to an official license document for the relevant resource/version before claiming verified compatibility | Metadata may contain license claims. There is no universal license verifier; free access, public source code and an open-source license are different claims |
@@ -31,12 +31,13 @@ For each labeled dataset, record the dataset/configuration revision, expected en
 | Jobs | Identify provider/board and listing; require project-specific fields such as role, company and URL | Missing listings are unobserved, not closed. Closing requires an explicit source status; salary and location must not be inferred when absent |
 | Other domains | Define stable keys, typed required attributes, evidence and change semantics in the adapter/processor and fixtures | Add domain checks through the SDK; the storage core does not supply a universal truth or quality oracle |
 
-### Follow-up gaps found during acceptance
+### Acceptance corrections delivered in 0.9
 
-The following remain pending and are not covered by the source-integrity fixes:
+The concrete gaps found during the 0.8 acceptance review are covered by the 0.9 implementation and regression tests:
 
-- Generic keyword policies currently allow empty, whitespace-only and repeated terms. Use distinct nonempty terms while validation and deduplication are tightened; empty strings can match every record and repeated terms can inflate a score.
-- Automatic namespacing for `observation-entity` needs an explicit compatibility/migration decision so existing reviews and histories keep their identities.
-- Offline reevaluation currently reconstructs an observation from the current table: it omits `urls`, and `occurred_at` is not refreshed by subsequent collection. Immutable observation revisions retain the received payload, but a custom evaluator depending on those fields needs a storage/replay correction before relying on offline equivalence.
+- Empty/whitespace-only terms are rejected and repeated case variants contribute once, including direct SDK use.
+- Namespaces are explicit and immutable for an existing connection. New guided observation projects use them; legacy projects keep their keys and reject ambiguous cross-source collisions.
+- Full observations and original per-mention drafts retain URL lists, timestamps and evidence for offline reevaluation. Legacy backfill uses only actual stored revisions; data never recorded cannot be reconstructed.
+- Current per-mention evaluations replace historical maximum scoring. Score, confidence, category and reasons come from one assessment, and changing evidence can reduce relevance while preserving human decisions.
 
-These are concrete follow-up acceptance cases, not completed guarantees. The personalized X For You connector and the owner's actual vault/MCP validation remain the separate external blockers in issues #2 and #3.
+See [0.9 migration](migration-v0.9.md) for compatibility and older-data limits. These deterministic cases do not establish precision on an arbitrary live dataset. The personalized X For You connector and the owner's actual vault/MCP validation remain the separate external blockers in issues #2 and #3.

@@ -2,7 +2,7 @@
 
 **Open-source, local-first engine that turns observations from user-authorized sources into structured, evidence-linked, reviewable knowledge.** It is not a news summarizer. Sources, extractors, evaluators and outputs are interchangeable.
 
-Version **0.8.0 beta**. The Obsidian plugin retains its original ID `x-feed-scraper`, repository URL and ZIP filename to protect existing installations.
+Version **0.9.0 beta**. The Obsidian plugin retains its original ID `x-feed-scraper`, repository URL and ZIP filename to protect existing installations.
 
 ## What it does
 
@@ -20,7 +20,9 @@ Discovery Engine can now **monitor identified records between collections**, not
 
 Reproducible examples: `examples/price-monitor/project.json` (USD 129.99 → 99.99, alert on ≥10% reduction) and `examples/job-radar/project.json` (new job, explicit status update and changed location). Both use the same generic engine and source interface. Real authorized inputs can use `public-json` (such as a public Greenhouse job board) or `public-product` (a public Schema.org Product/Offer page); support depends on what each provider exposes.
 
-**Alerts are currently local records and an Obsidian/CLI feed**, not push notifications. Disappearance from a job board is not sufficient evidence of closure; price comparisons are guarded against currency changes. See [Monitoring guide](docs/monitoring.md).
+**Alerts are local by default.** An explicitly enabled `webhook` output can deliver them to a user-selected HTTPS receiver, with durable delivery records, bounded retries and stable idempotency keys. The Obsidian panel and CLI show delivery status. Disappearance from a job board is not sufficient evidence of closure; price comparisons are guarded against currency changes. See [Monitoring guide](docs/monitoring.md) and [Webhook delivery](docs/webhooks.md).
+
+The 0.9 release preserves full source observations and per-mention extraction evidence for offline reevaluation. Current assessments can fall as evidence changes, without changing human reviews. Optional entity namespaces separate providers with overlapping local IDs; existing keys stay unchanged. See [Upgrade from 0.8](docs/migration-v0.9.md).
 
 ## First run in Obsidian — no code or JSON required
 
@@ -69,7 +71,7 @@ All example inputs are synthetic. Project manifests define source adapters, an o
 ## Install in Obsidian Desktop
 
 1. Install Obsidian Desktop **1.9.2+** and Node.js **22.16+**.
-2. Download the [v0.8.0-beta.1 release](https://github.com/ibbuilds/obsidian-x-feed-scraper/releases/tag/v0.8.0-beta.1).
+2. Download the [v0.9.0-beta.1 release](https://github.com/ibbuilds/obsidian-x-feed-scraper/releases/tag/v0.9.0-beta.1).
 3. Extract `main.js`, `manifest.json` and `styles.css` into `<vault>/.obsidian/plugins/x-feed-scraper/`. Keep this directory: the plugin ID is intentionally backward compatible.
 4. Enable **Bases** under Core plugins, then **Discovery Engine** under Community plugins.
 5. Click **Create research project** in the sidebar to use the guided setup (including an offline test), or supply an existing absolute **Research project manifest** in Settings for advanced use.
@@ -83,10 +85,10 @@ The standard three-file package embeds a SHA-256 checked Node collector and prof
 - **Source SDK:** `SourceAdapter.collect({source,cursor,limit,signal})` returns pages of generic observations.
 - **Processors:** `extract-links`, `linked-resources`, `observation-entity` and opt-in `public-metadata`, or third-party implementations.
 - **Evaluators:** evidence and relevance scoring according to each project's own rules; never automatic human approval.
-- **Outputs:** bundled `json` and `obsidian`, plus independent third-party output adapters.
+- **Outputs:** bundled `json`, `obsidian` and opt-in `webhook` alert delivery, plus independent third-party output adapters.
 - **Local extensions:** load explicit, audited CommonJS `.cjs` modules via `--extension` or Settings. Extensions execute with the OS user's privileges; **there is no security sandbox**.
 
-See `docs/sdk.md`, `docs/projects.md` and `docs/mcp-stdio.md` for SDK contracts, example manifests and MCP interoperability.
+See `docs/sdk.md`, `docs/projects.md` and `docs/mcp-stdio.md` for SDK contracts, example manifests and MCP interoperability. The supported extension boundary remains explicitly trusted local code; [isolation design](docs/extension-isolation.md) describes the controls and the separate work required for untrusted execution.
 
 ## Migration and compatibility
 
@@ -100,6 +102,6 @@ Collection is bounded by authorized source permissions, rate limits, available r
 
 CI validates different domains, the external SDK example, migration, cursor recovery and safe exports, plus real Obsidian Desktop in an **isolated** vault. The user's personal vault and connected Obsidian MCP still require their own smoke test. Personalized X For You remains blocked pending an authorized connector.
 
-Documentation: `docs/monitoring.md`, `docs/first-run.md`, `docs/projects.md`, `docs/sdk.md`, `docs/mcp-stdio.md`, `docs/architecture.md`, `docs/security.md`, `docs/migration-v0.5.md`, `docs/plugin-guide.md`, `docs/x-access.md` and `docs/acceptance-matrix.md`.
+Documentation: `docs/monitoring.md`, `docs/webhooks.md`, `docs/first-run.md`, `docs/projects.md`, `docs/sdk.md`, `docs/mcp-stdio.md`, `docs/architecture.md`, `docs/security.md`, `docs/migration-v0.5.md`, `docs/migration-v0.9.md`, `docs/plugin-guide.md`, `docs/x-access.md` and `docs/acceptance-matrix.md`.
 
 Contributions are welcome under the MIT license. Never commit credentials or private user data.

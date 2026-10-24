@@ -1,6 +1,6 @@
 import {isAbsolute,resolve} from "node:path";
 import {normalizeUrl} from "./url.ts";
-import {parseProject} from "./project-config.ts";
+import {normalizeKeywords,parseProject} from "./project-config.ts";
 import {parseMcpMapping} from "../adapters/mcp-mapping.ts";
 import type {ProjectDefinition,JsonRecord} from "../sdk/contracts.ts";
 
@@ -23,10 +23,8 @@ export interface ProjectSetup {
   watchPath?:string;watchThreshold?:number;watchValue?:string;
 }
 function terms(raw:string|undefined):string[]{
-  const items=(raw||"").split(/[,\n]/g).map(part=>part.trim()).filter(Boolean);
-  if(items.length>60||items.some(x=>x.length>100))throw new Error(
-    "Enter at most 60 research terms, each at most 100 characters");
-  return [...new Set(items)];
+  if(raw===undefined||raw.trim()==="")return [];
+  return normalizeKeywords(raw.split(/[,\n]/g),"research terms");
 }
 function required(value:string|undefined,label:string,max=3000):string {
   if(!value?.trim()||value.length>max)throw new Error("Enter a valid "+label);
@@ -85,6 +83,7 @@ export function buildProject(setup:ProjectSetup):ProjectDefinition{
     config={command,args,tool,protocol:setup.mcpProtocol||"auto",
       ...(mapping?{mapping:JSON.parse(JSON.stringify(mapping)) as JsonRecord}:{})};
   }else throw new Error("Unsupported research source");
+  if(setup.mode==="observation-entity")config.entityNamespace="primary-source";
   if(setup.publicMetadata&&setup.mode==="observation-entity"){
     throw new Error("Public metadata requires a link-extraction processor");
   }

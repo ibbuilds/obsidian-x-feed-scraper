@@ -1,4 +1,4 @@
-# Discovery Engine 0.8.0 acceptance and release boundaries
+# Discovery Engine 0.9.0 acceptance and release boundaries
 
 CI verification refers to the automated GitHub Actions tests, not the user's personal Obsidian vault or X account. Feature status must not be inferred from installability alone.
 
@@ -12,7 +12,10 @@ CI verification refers to the automated GitHub Actions tests, not the user's per
 | Resumable incremental collection | Implemented and tested | Stable IDs, durable cursors, atomic per-page persistence, failed-page replay |
 | Execution cache isolation and cancellation | Implemented and tested | Reusing a caller signal reloads snapshots between runs, isolates projects, preserves reviews and prevents a late page from committing after cancellation |
 | Source configuration changes | Implemented and tested | Config fingerprints prevent reusing checkpoints for a different dataset |
-| Offline re-evaluation | Implemented and tested | Reprocess stored observations without calling sources or losing manual approval |
+| Offline re-evaluation | Implemented and tested | Replay retained full observations and original per-mention drafts/evidence without calling sources, fabricating change events or losing manual approval; historical missing data remains unknown |
+| Current automatic assessments | Implemented and tested | Per-mention current scores can decrease; the aggregate takes score/confidence/category/reasons from one winning assessment, never separate historical maxima |
+| Provider identity namespaces | Implemented and tested | Explicit stable namespace separates overlapping local IDs; intentional shared namespaces deduplicate; legacy keys/reviews remain stable and ambiguous cross-source legacy keys fail atomically |
+| Keyword policy validation | Implemented and tested | Reject blank terms and count case-insensitive duplicates once, in manifests and direct SDK evaluation |
 | Relationship/provenance storage | Implemented and tested | SQLite `kb_mentions` and observation count, evidence JSON |
 | Optional public metadata research | Implemented; explicitly opt-in | DNS-pinned public HTTP, blocks private destinations and X, per-run limit |
 | Non-URL resources | Implemented and tested | Security advisory, ticket and research record entity examples |
@@ -26,9 +29,10 @@ CI verification refers to the automated GitHub Actions tests, not the user's per
 | Product price monitor | Implemented with deterministic tests | Public Schema.org Product/Offer structured-data adapter and local price-drop scenario; real merchant support varies |
 | Public source identity and transport | Implemented with deterministic tests | Multiple recognized Products are rejected before selecting an Offer; HTTPS redirects cannot downgrade to HTTP; DNS/private-address checks still apply |
 | Job opportunities monitor | Implemented with deterministic tests | Generic HTTPS JSON API mapping, public Greenhouse example template and synthetic job status/location changes; cannot infer closure from absence |
-| External notifications | Not implemented | Alerts are local SQLite/UI/CLI records, not email/SMS/push notifications |
+| External alert delivery | Implemented with deterministic tests; opt-in | HTTPS webhook output, delivery ledger, bounded retries, receiver idempotency key and Obsidian/CLI/API status; a real receiver must still be configured and verified by its owner |
 | MCP interoperability | Tested with synthetic servers | Modern 2026-07-28 and legacy stdio, explicit selected tools, declarative provider JSON mapping, timeouts and secret scoping |
 | External extensions security sandbox | **Not implemented** | Only explicitly trusted local .cjs files; OS-level isolation needed for untrusted modules |
+| Untrusted-extension isolation design | Documented | Threat model, current controls, proposed process/broker/OS boundary and per-platform acceptance in `docs/extension-isolation.md`; this is a design, not a claimed sandbox |
 | True account-personalized X For You connector | **Blocked** | No verified authorized endpoint/provider method; no real user feed accessed |
 | Actual owner's Obsidian/MCP installation | **Not verified** | CI uses isolated test vaults, not the owner's device and files |
 
@@ -48,6 +52,8 @@ CI verification refers to the automated GitHub Actions tests, not the user's per
 12. Public HTTP tests simulate redirects without external requests: HTTPS-to-HTTP is rejected, HTTPS redirects still work, private destinations remain blocked, and explicitly configured HTTP sources retain their existing support.
 
 Source integrity regressions are covered in `tests/monitoring-run-isolation.test.ts` and `tests/public-source-integrity.test.ts`. These cases extend the automated acceptance suite; they do not establish real-merchant compatibility or owner-device acceptance.
+
+Curated-data regressions are covered in `tests/curation-identity.test.ts` and `tests/observation-replay.test.ts`. Webhook tests exercise delivery/retry/idempotency and transport restrictions using in-memory DNS/HTTP mocks. The packaged collector exposes read-only delivery status even when external delivery has never been enabled.
 
 ## Domain curation acceptance
 
