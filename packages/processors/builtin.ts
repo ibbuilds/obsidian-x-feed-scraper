@@ -1,5 +1,6 @@
 import {normalizeUrl,isXUrl} from "../core/url.ts";
 import {fetchPublicMetadata} from "../connectors/metadata.ts";
+import {entityNamespace,normalizeKeywords} from "../core/project-config.ts";
 import type {Extension,EntityDraft,Observation,Processor,Evaluator} from "../sdk/contracts.ts";
 
 function candidates(observation:Observation):string[]{
@@ -88,8 +89,12 @@ const metadata:Processor={
 };
 const self:Processor={
   id:"observation-entity",
-  run(_context,observation,previous){
-    return [...previous,{key:observation.type+":"+observation.id,type:observation.type,
+  run(context,observation,previous){
+    const namespace=entityNamespace(context.source.config.entityNamespace);
+    // Namespace and type cannot contain ':'. The remainder is the full local
+    // ID, including any delimiters; '@' cannot begin a legacy type:id key.
+    const key=(namespace===undefined?"":"@"+namespace+":")+observation.type+":"+observation.id;
+    return [...previous,{key,type:observation.type,
       title:observation.title||observation.id,url:observation.url,
       attributes:observation.attributes,
       evidence:[{signal:"source-observation",detail:"Recorded by the configured adapter",confidence:1}]}];
@@ -98,14 +103,17 @@ const self:Processor={
 const keyword:Evaluator={
   id:"keyword",
   assess({project},observation,entity){
+    // SDK callers can construct a ProjectDefinition without parseProject.
+    const include=normalizeKeywords(project.policy.includeKeywords,"include keywords");
+    const exclude=normalizeKeywords(project.policy.excludeKeywords,"exclude keywords");
     const corpus=[observation.title||"",observation.text||"",entity.title,
       JSON.stringify(entity.attributes||{})].join(" ").toLowerCase();
-    const negative=project.policy.excludeKeywords.filter(word=>corpus.includes(word.toLowerCase()));
+    const negative=exclude.filter(word=>corpus.includes(word.toLowerCase()));
     if(negative.length){
       return {category:"excluded",score:0,confidence:0.9,reasons:["Explicit exclusion term matched"]};
     }
-    const matched=project.policy.includeKeywords.filter(word=>corpus.includes(word.toLowerCase()));
-    const hasCriteria=project.policy.includeKeywords.length>0;
+    const matched=include.filter(word=>corpus.includes(word.toLowerCase()));
+    const hasCriteria=include.length>0;
     const base=hasCriteria?0:50;
     const description=typeof entity.attributes?.description==="string"?
       entity.attributes.description:"";

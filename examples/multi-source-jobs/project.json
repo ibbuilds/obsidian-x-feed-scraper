@@ -1,0 +1,49 @@
+{
+  "id": "multi-source-jobs",
+  "name": "Jobs from independent identity domains",
+  "sources": [
+    {
+      "id": "board-one",
+      "adapter": "json-snapshot",
+      "config": {
+        "path": "./board-one.json",
+        "entityNamespace": "board-one"
+      }
+    },
+    {
+      "id": "board-two",
+      "adapter": "json-snapshot",
+      "config": {
+        "path": "./board-two.json",
+        "entityNamespace": "board-two"
+      }
+    }
+  ],
+  "pipeline": [
+    "observation-entity"
+  ],
+  "evaluator": "keyword",
+  "policy": {
+    "includeKeywords": [
+      "frontend"
+    ],
+    "excludeKeywords": [],
+    "minimumScore": 25
+  },
+  "watch": {
+    "rules": [
+      {
+        "id": "new-listing",
+        "operator": "created",
+        "path": "$"
+      }
+    ]
+  },
+  "outputs": [
+    {
+      "id": "structured-results",
+      "adapter": "json",
+      "config": {}
+    }
+  ]
+}

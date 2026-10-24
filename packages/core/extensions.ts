@@ -3,6 +3,7 @@ import {resolve} from "node:path";
 import {builtinSources} from "../adapters/builtin.ts";
 import {builtinProcessing} from "../processors/builtin.ts";
 import {builtinOutputs} from "../outputs/builtin.ts";
+import {webhookOutput} from "../outputs/webhook.ts";
 import {registry,registerExtension} from "./registry.ts";
 import type {Registry,Extension} from "../sdk/contracts.ts";
 /**
@@ -14,6 +15,7 @@ export function createDefaultRegistry(extensionPaths:readonly string[]=[]):Regis
   registerExtension(result,builtinSources);
   registerExtension(result,builtinProcessing);
   registerExtension(result,builtinOutputs);
+  registerExtension(result,{apiVersion:1,outputs:[webhookOutput]});
   if(extensionPaths.length>16)throw new Error("Too many external extensions");
   const require=createRequire(resolve("discovery-extension-loader.cjs"));
   for(const file of extensionPaths){

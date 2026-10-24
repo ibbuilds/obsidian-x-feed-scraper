@@ -38,9 +38,11 @@ export class KnowledgeStore extends Store {
       "CREATE TABLE IF NOT EXISTS kb_projects (id TEXT PRIMARY KEY,name TEXT NOT NULL,config_hash TEXT NOT NULL,created_at TEXT NOT NULL,updated_at TEXT NOT NULL);" +
       "CREATE TABLE IF NOT EXISTS kb_migration_state (name TEXT PRIMARY KEY,fingerprint TEXT NOT NULL);" +
       "CREATE TABLE IF NOT EXISTS kb_connections (project_id TEXT NOT NULL REFERENCES kb_projects(id),connection_id TEXT NOT NULL,adapter_id TEXT NOT NULL,config_hash TEXT NOT NULL DEFAULT '',created_at TEXT NOT NULL,PRIMARY KEY(project_id,connection_id));" +
-      "CREATE TABLE IF NOT EXISTS kb_observations (project_id TEXT NOT NULL,connection_id TEXT NOT NULL,item_id TEXT NOT NULL,type TEXT NOT NULL,title TEXT,text TEXT,url TEXT,attributes_json TEXT NOT NULL,media_json TEXT NOT NULL,occurred_at TEXT,first_seen TEXT NOT NULL,last_seen TEXT NOT NULL,PRIMARY KEY(project_id,connection_id,item_id),FOREIGN KEY(project_id,connection_id) REFERENCES kb_connections(project_id,connection_id));" +
+      "CREATE TABLE IF NOT EXISTS kb_observations (project_id TEXT NOT NULL,connection_id TEXT NOT NULL,item_id TEXT NOT NULL,type TEXT NOT NULL,title TEXT,text TEXT,url TEXT,attributes_json TEXT NOT NULL,media_json TEXT NOT NULL,occurred_at TEXT,first_seen TEXT NOT NULL,last_seen TEXT NOT NULL,observation_json TEXT,PRIMARY KEY(project_id,connection_id,item_id),FOREIGN KEY(project_id,connection_id) REFERENCES kb_connections(project_id,connection_id));" +
       "CREATE TABLE IF NOT EXISTS kb_entities (project_id TEXT NOT NULL REFERENCES kb_projects(id),entity_key TEXT NOT NULL,type TEXT NOT NULL,title TEXT NOT NULL,url TEXT,attributes_json TEXT NOT NULL,created_at TEXT NOT NULL,updated_at TEXT NOT NULL,PRIMARY KEY(project_id,entity_key));" +
-      "CREATE TABLE IF NOT EXISTS kb_mentions (project_id TEXT NOT NULL,connection_id TEXT NOT NULL,item_id TEXT NOT NULL,entity_key TEXT NOT NULL,evidence_json TEXT NOT NULL,PRIMARY KEY(project_id,connection_id,item_id,entity_key),FOREIGN KEY(project_id,connection_id,item_id) REFERENCES kb_observations(project_id,connection_id,item_id),FOREIGN KEY(project_id,entity_key) REFERENCES kb_entities(project_id,entity_key));" +
+      "CREATE TABLE IF NOT EXISTS kb_mentions (project_id TEXT NOT NULL,connection_id TEXT NOT NULL,item_id TEXT NOT NULL,entity_key TEXT NOT NULL,evidence_json TEXT NOT NULL,draft_json TEXT,observation_json TEXT,active INTEGER NOT NULL DEFAULT 1,PRIMARY KEY(project_id,connection_id,item_id,entity_key),FOREIGN KEY(project_id,connection_id,item_id) REFERENCES kb_observations(project_id,connection_id,item_id),FOREIGN KEY(project_id,entity_key) REFERENCES kb_entities(project_id,entity_key));" +
+      "CREATE TABLE IF NOT EXISTS kb_mention_assessments (project_id TEXT NOT NULL,connection_id TEXT NOT NULL,item_id TEXT NOT NULL,entity_key TEXT NOT NULL,category TEXT NOT NULL,score INTEGER NOT NULL,confidence REAL NOT NULL,reasons_json TEXT NOT NULL,evaluator_id TEXT NOT NULL,updated_at TEXT NOT NULL,PRIMARY KEY(project_id,connection_id,item_id,entity_key),FOREIGN KEY(project_id,connection_id,item_id,entity_key) REFERENCES kb_mentions(project_id,connection_id,item_id,entity_key));" +
+      "CREATE INDEX IF NOT EXISTS kb_current_assessment ON kb_mention_assessments(project_id,entity_key,score DESC,confidence DESC,connection_id,item_id);" +
       "CREATE TABLE IF NOT EXISTS kb_assessments (project_id TEXT NOT NULL,entity_key TEXT NOT NULL,category TEXT NOT NULL,score INTEGER NOT NULL,confidence REAL NOT NULL,reasons_json TEXT NOT NULL,evaluator_id TEXT NOT NULL,updated_at TEXT NOT NULL,PRIMARY KEY(project_id,entity_key),FOREIGN KEY(project_id,entity_key) REFERENCES kb_entities(project_id,entity_key));" +
       "CREATE TABLE IF NOT EXISTS kb_assessment_history (id INTEGER PRIMARY KEY,project_id TEXT NOT NULL,entity_key TEXT NOT NULL,category TEXT NOT NULL,score INTEGER NOT NULL,confidence REAL NOT NULL,reasons_json TEXT NOT NULL,evaluator_id TEXT NOT NULL,recorded_at TEXT NOT NULL,FOREIGN KEY(project_id,entity_key) REFERENCES kb_entities(project_id,entity_key));" +
       "CREATE TABLE IF NOT EXISTS kb_entity_versions (id INTEGER PRIMARY KEY,project_id TEXT NOT NULL,entity_key TEXT NOT NULL,connection_id TEXT,observation_id TEXT,snapshot_json TEXT NOT NULL,observed_at TEXT NOT NULL,FOREIGN KEY(project_id,entity_key) REFERENCES kb_entities(project_id,entity_key));" +
@@ -63,7 +65,17 @@ export class KnowledgeStore extends Store {
     if(!columns.some(col=>col.name==="config_hash")){
       this.db.exec("ALTER TABLE kb_connections ADD COLUMN config_hash TEXT NOT NULL DEFAULT ''");
     }
+    for(const [table,column,definition] of [
+      ["kb_observations","observation_json","TEXT"],["kb_mentions","draft_json","TEXT"],
+      ["kb_mentions","observation_json","TEXT"],["kb_mentions","active","INTEGER NOT NULL DEFAULT 1"]
+    ]){
+      const existing=this.db.prepare("PRAGMA table_info("+table+")").all() as Array<{name:string}>;
+      if(!existing.some(entry=>entry.name===column)){
+        this.db.exec("ALTER TABLE "+table+" ADD COLUMN "+column+" "+definition);
+      }
+    }
     const legacy=this.migrateLegacy();
+    this.restoreObservationSnapshots();
     // Baselines for pre-v0.8 libraries. These are NOT synthetic change alerts:
     // previous records are simply recorded as the initial known state.
     const done=this.db.prepare(
@@ -86,6 +98,25 @@ export class KnowledgeStore extends Store {
       }catch(error){this.db.exec("ROLLBACK");throw error;}
     }
 
+  }
+  /** Repair current replay data only where an actual immutable snapshot exists. */
+  private restoreObservationSnapshots():void{
+    // Old aggregate scores cannot be attributed to a particular mention. Leave
+    // them unchanged until collection/reprocessing supplies real assessments.
+    // Likewise, no original draft or observation revision is invented here.
+    this.db.prepare(
+      "UPDATE kb_observations AS o SET "+
+      "(observation_json,title,text,url,attributes_json,media_json,occurred_at)=("+
+      "SELECT v.observation_json,json_extract(v.observation_json,'$.title'),"+
+      "json_extract(v.observation_json,'$.text'),json_extract(v.observation_json,'$.url'),"+
+      "COALESCE(json_extract(v.observation_json,'$.attributes'),'{}'),"+
+      "COALESCE(json_extract(v.observation_json,'$.media'),'[]'),"+
+      "json_extract(v.observation_json,'$.occurredAt') FROM kb_observation_versions v "+
+      "WHERE v.project_id=o.project_id AND v.connection_id=o.connection_id AND v.item_id=o.item_id "+
+      "ORDER BY v.id DESC LIMIT 1) WHERE o.observation_json IS NULL AND EXISTS("+
+      "SELECT 1 FROM kb_observation_versions v WHERE v.project_id=o.project_id "+
+      "AND v.connection_id=o.connection_id AND v.item_id=o.item_id)"
+    ).run();
   }
   saveProject(project:ProjectDefinition):void{
     const date=now();
@@ -158,9 +189,11 @@ export class KnowledgeStore extends Store {
   }
   saveBatch(projectId:string,source:ProjectSource,items:Array<{
     observation:Observation;entities:Array<{draft:EntityDraft;assessment:Assessment}>;
-  }>,nextCursor:string|undefined,evaluatorId:string,watchRules:readonly ChangeRule[]=[]):{observations:number;newEntities:number;duplicates:number}{
+  }>,nextCursor:string|undefined,evaluatorId:string,watchRules:readonly ChangeRule[]=[],
+  protectObservationIdentity=false):{observations:number;newEntities:number;duplicates:number}{
     const count={observations:0,newEntities:0,duplicates:0};
     const date=now();
+    const assessedEntities=new Set<string>();
     this.db.exec("BEGIN IMMEDIATE");
     try{
       for(const {observation,entities} of items){
@@ -170,22 +203,34 @@ export class KnowledgeStore extends Store {
         if(oldObservation&&oldObservation.type!==observation.type){
           throw new Error("Observation identity reused for a different type");
         }
+        const priorMentions=this.db.prepare(
+          "SELECT entity_key,draft_json FROM kb_mentions WHERE project_id=? AND connection_id=? AND item_id=? AND active=1"
+        ).all(projectId,source.id,observation.id) as Array<{entity_key:string;draft_json:string|null}>;
+        const priorDrafts=new Map(priorMentions.map(mention=>[mention.entity_key,mention.draft_json]));
+        for(const mention of priorMentions)assessedEntities.add(mention.entity_key);
+        // Only an actually received update can supersede this observation's
+        // support. Missing records in a snapshot imply no deletion or closure.
+        this.db.prepare("UPDATE kb_mentions SET active=0 WHERE project_id=? AND connection_id=? AND item_id=?")
+          .run(projectId,source.id,observation.id);
+        this.db.prepare("DELETE FROM kb_mention_assessments WHERE project_id=? AND connection_id=? AND item_id=?")
+          .run(projectId,source.id,observation.id);
+        const observationContent=JSON.stringify(observation);
         const inserted=this.db.prepare(
-          "INSERT OR IGNORE INTO kb_observations(project_id,connection_id,item_id,type,title,text,url,attributes_json,media_json,occurred_at,first_seen,last_seen) "+
-          "VALUES(?,?,?,?,?,?,?,?,?,?,?,?)"
+          "INSERT OR IGNORE INTO kb_observations(project_id,connection_id,item_id,type,title,text,url,attributes_json,media_json,occurred_at,first_seen,last_seen,observation_json) "+
+          "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)"
         ).run(projectId,source.id,observation.id,observation.type,
-          observation.title||null,observation.text||null,observation.url||null,
+          observation.title??null,observation.text??null,observation.url??null,
           JSON.stringify(observation.attributes||{}),JSON.stringify(observation.media||[]),
-          observation.occurredAt||null,date,date);
+          observation.occurredAt??null,date,date,observationContent);
         this.db.prepare(
-          "UPDATE kb_observations SET last_seen=?,title=?,text=?,url=?,attributes_json=?,media_json=? "+
+          "UPDATE kb_observations SET last_seen=?,title=?,text=?,url=?,attributes_json=?,media_json=?,occurred_at=?,observation_json=? "+
           "WHERE project_id=? AND connection_id=? AND item_id=?"
-        ).run(date,observation.title||null,observation.text||null,observation.url||null,
+        ).run(date,observation.title??null,observation.text??null,observation.url??null,
           JSON.stringify(observation.attributes||{}),JSON.stringify(observation.media||[]),
+          observation.occurredAt??null,observationContent,
           projectId,source.id,observation.id);
         // Immutable original evidence, once per distinct revision. A re-read of
         // the same snapshot never produces an additional history entry.
-        const observationContent=JSON.stringify(observation);
         const observationHash=hash(observationContent);
         const latestObservation=this.db.prepare(
           "SELECT content_hash FROM kb_observation_versions WHERE "+
@@ -200,6 +245,11 @@ export class KnowledgeStore extends Store {
         if(inserted.changes===0)count.duplicates++;
         count.observations++;
         for(const {draft,assessment} of entities){
+          if(protectObservationIdentity&&draft.key===observation.type+":"+observation.id&&
+            this.db.prepare("SELECT 1 FROM kb_mentions WHERE project_id=? AND entity_key=? "+
+              "AND connection_id<>? LIMIT 1").get(projectId,draft.key,source.id)){
+            throw new Error("Observation identity already belongs to another source; configure entityNamespace");
+          }
           const oldEntity=this.db.prepare(
             "SELECT type,title,url,attributes_json FROM kb_entities WHERE project_id=? AND entity_key=?"
           ).get(projectId,draft.key) as {
@@ -212,9 +262,16 @@ export class KnowledgeStore extends Store {
             type:oldEntity.type,title:oldEntity.title,url:oldEntity.url||undefined,
             attributes:JSON.parse(oldEntity.attributes_json) as JsonRecord
           }):undefined;
+          const priorDraft=priorDrafts.get(draft.key);
+          const repeatedClaim=previous&&priorDraft&&sameJson(
+            snapshot(JSON.parse(priorDraft) as EntityDraft) as unknown as JsonValue,
+            snapshot(draft) as unknown as JsonValue);
+          // Re-reading an unchanged active claim must not undo a different
+          // mention's newer change. Evidence still refreshes below; a claim
+          // that was inactive is deliberately eligible to establish state again.
           // Missing fields in partial updates mean "not supplied", not deleted.
           // Explicit null values remain observable changes.
-          const next=snapshot({
+          const next=repeatedClaim?previous!:snapshot({
             type:draft.type,title:draft.title,url:draft.url||oldEntity?.url||undefined,
             attributes:{...(previous?.attributes||{}),...(draft.attributes||{})}
           });
@@ -252,44 +309,17 @@ export class KnowledgeStore extends Store {
             }
           }
           this.db.prepare(
-            "INSERT INTO kb_mentions(project_id,connection_id,item_id,entity_key,evidence_json) VALUES(?,?,?,?,?) "+
-            "ON CONFLICT(project_id,connection_id,item_id,entity_key) DO UPDATE SET evidence_json=excluded.evidence_json"
-          ).run(projectId,source.id,observation.id,draft.key,JSON.stringify(draft.evidence||[]));
-          const previousAssessment=this.db.prepare(
-            "SELECT category,score,confidence,reasons_json,evaluator_id FROM kb_assessments "+
-            "WHERE project_id=? AND entity_key=?"
-          ).get(projectId,draft.key) as {category:string;score:number;confidence:number;
-            reasons_json:string;evaluator_id:string}|undefined;
-          const reasons=JSON.stringify(assessment.reasons);
-          // Prefer strongest evidence when several observations refer to one entity.
-          this.db.prepare(
-            "INSERT INTO kb_assessments(project_id,entity_key,category,score,confidence,reasons_json,evaluator_id,updated_at) "+
-            "VALUES(?,?,?,?,?,?,?,?) ON CONFLICT(project_id,entity_key) DO UPDATE SET "+
-            "category=CASE WHEN excluded.score>=score THEN excluded.category ELSE category END,"+
-            "score=max(score,excluded.score),confidence=max(confidence,excluded.confidence),"+
-            "reasons_json=CASE WHEN excluded.score>=score THEN excluded.reasons_json ELSE reasons_json END,"+
-            "evaluator_id=CASE WHEN excluded.score>=score THEN excluded.evaluator_id ELSE evaluator_id END,"+
-            "updated_at=excluded.updated_at"
-          ).run(projectId,draft.key,assessment.category,assessment.score,assessment.confidence,
-            reasons,evaluatorId,date);
-          const updatedAssessment=this.db.prepare(
-            "SELECT category,score,confidence,reasons_json,evaluator_id FROM kb_assessments "+
-            "WHERE project_id=? AND entity_key=?"
-          ).get(projectId,draft.key) as {category:string;score:number;confidence:number;
-            reasons_json:string;evaluator_id:string};
-          if(!previousAssessment||
-            Object.keys(updatedAssessment).some(key=>
-              updatedAssessment[key as keyof typeof updatedAssessment] !==
-              previousAssessment[key as keyof typeof previousAssessment])){
-            this.db.prepare(
-              "INSERT INTO kb_assessment_history(project_id,entity_key,category,score,confidence,reasons_json,evaluator_id,recorded_at) "+
-              "VALUES(?,?,?,?,?,?,?,?)"
-            ).run(projectId,draft.key,updatedAssessment.category,updatedAssessment.score,
-              updatedAssessment.confidence,updatedAssessment.reasons_json,
-              updatedAssessment.evaluator_id,date);
-          }
+            "INSERT INTO kb_mentions(project_id,connection_id,item_id,entity_key,evidence_json,draft_json,observation_json,active) VALUES(?,?,?,?,?,?,?,1) "+
+            "ON CONFLICT(project_id,connection_id,item_id,entity_key) DO UPDATE SET "+
+            "evidence_json=excluded.evidence_json,draft_json=excluded.draft_json,"+
+            "observation_json=excluded.observation_json,active=1"
+          ).run(projectId,source.id,observation.id,draft.key,JSON.stringify(draft.evidence||[]),JSON.stringify(draft),
+            observationContent);
+          this.writeMentionAssessment(projectId,draft.key,source.id,observation.id,assessment,evaluatorId,date);
+          assessedEntities.add(draft.key);
         }
       }
+      for(const key of assessedEntities)this.refreshAssessment(projectId,key,date);
       this.db.prepare(
         "INSERT INTO kb_checkpoints(project_id,connection_id,cursor,updated_at) VALUES(?,?,?,?) "+
         "ON CONFLICT(project_id,connection_id) DO UPDATE SET cursor=excluded.cursor,updated_at=excluded.updated_at"
@@ -387,17 +417,20 @@ export class KnowledgeStore extends Store {
     if(!entity)return undefined;
     const mentions=(this.db.prepare(
       "SELECT m.connection_id,m.item_id,o.type,o.title,o.url,o.occurred_at,"+
-      "m.evidence_json,o.first_seen,o.last_seen "+
+      "m.evidence_json,m.observation_json,m.active,o.first_seen,o.last_seen "+
       "FROM kb_mentions m JOIN kb_observations o ON "+
       "o.project_id=m.project_id AND o.connection_id=m.connection_id AND o.item_id=m.item_id "+
       "WHERE m.project_id=? AND m.entity_key=? "+
       "ORDER BY o.last_seen DESC LIMIT 50"
-    ).all(projectId,key) as Row[]).map(row=>({
-      connectionId:row.connection_id,itemId:row.item_id,type:row.type,
-      title:row.title,url:row.url,occurredAt:row.occurred_at,
-      firstSeen:row.first_seen,lastSeen:row.last_seen,
-      evidence:json(row.evidence_json,[])
-    }));
+    ).all(projectId,key) as Row[]).map(row=>{
+      const original=json<Observation|undefined>(row.observation_json,undefined);
+      return {connectionId:row.connection_id,itemId:row.item_id,type:row.type,
+        title:original?original.title??null:row.title,
+        url:original?original.url??null:row.url,
+        occurredAt:original?original.occurredAt??null:row.occurred_at,
+        firstSeen:row.first_seen,lastSeen:row.last_seen,active:Boolean(row.active),
+        evidence:json(row.evidence_json,[])};
+    });
     const reviews=(this.db.prepare(
       "SELECT decision,reason,reviewed_at FROM kb_reviews WHERE project_id=? "+
       "AND entity_key=? ORDER BY id DESC LIMIT 30"
@@ -443,27 +476,83 @@ export class KnowledgeStore extends Store {
       return this.getEntity(projectId,key)!;
     }finally{release();}
   }
-  updateAssessment(projectId:string,key:string,value:Assessment,evaluator:string):void{
+  private writeMentionAssessment(projectId:string,key:string,connectionId:string,itemId:string,
+    value:Assessment,evaluator:string,date:string):void{
+    this.db.prepare(
+      "INSERT INTO kb_mention_assessments(project_id,connection_id,item_id,entity_key,"+
+      "category,score,confidence,reasons_json,evaluator_id,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?) "+
+      "ON CONFLICT(project_id,connection_id,item_id,entity_key) DO UPDATE SET "+
+      "category=excluded.category,score=excluded.score,confidence=excluded.confidence,"+
+      "reasons_json=excluded.reasons_json,evaluator_id=excluded.evaluator_id,updated_at=excluded.updated_at"
+    ).run(projectId,connectionId,itemId,key,value.category,value.score,value.confidence,
+      JSON.stringify(value.reasons),evaluator,date);
+  }
+  private refreshAssessment(projectId:string,key:string,date:string):void{
+    const current=this.db.prepare(
+      "SELECT a.category,a.score,a.confidence,a.reasons_json,a.evaluator_id FROM kb_mention_assessments a "+
+      "JOIN kb_mentions m ON m.project_id=a.project_id AND m.connection_id=a.connection_id "+
+      "AND m.item_id=a.item_id AND m.entity_key=a.entity_key "+
+      "WHERE a.project_id=? AND a.entity_key=? AND m.active=1 "+
+      "ORDER BY a.score DESC,a.confidence DESC,a.connection_id,a.item_id LIMIT 1"
+    ).get(projectId,key) as {category:string;score:number;confidence:number;
+      reasons_json:string;evaluator_id:string}|undefined;
+    if(!current){
+      this.writeAssessment(projectId,key,{category:"unassessed",score:0,confidence:0,
+        reasons:["No current assessment is available from an active source mention"]},
+        "engine-no-active-evidence",date);
+      return;
+    }
+    // Copy one complete assessment. Separate maxima would combine a score and
+    // confidence that no evaluator ever produced, and retain obsolete highs.
+    this.writeAssessment(projectId,key,{category:current.category,score:current.score,
+      confidence:current.confidence,reasons:JSON.parse(current.reasons_json) as string[]},
+      current.evaluator_id,date);
+  }
+  updateMentionAssessments(projectId:string,key:string,values:Array<{
+    connectionId:string;observationId:string;assessment:Assessment
+  }>,evaluator:string):void{
+    if(!values.length)return;
+    const date=now();
+    this.db.exec("BEGIN IMMEDIATE");
+    try{
+      // Offline reprocessing replaces the set evaluated under the current
+      // project configuration. Historical mentions and reviews remain intact.
+      this.db.prepare("DELETE FROM kb_mention_assessments WHERE project_id=? AND entity_key=?")
+        .run(projectId,key);
+      for(const value of values){
+        this.writeMentionAssessment(projectId,key,value.connectionId,value.observationId,
+          value.assessment,evaluator,date);
+      }
+      this.refreshAssessment(projectId,key,date);
+      this.db.exec("COMMIT");
+    }catch(error){this.db.exec("ROLLBACK");throw error;}
+  }
+  private writeAssessment(projectId:string,key:string,value:Assessment,evaluator:string,date:string):void{
     const previous=this.db.prepare(
       "SELECT category,score,confidence,reasons_json,evaluator_id FROM kb_assessments "+
       "WHERE project_id=? AND entity_key=?"
     ).get(projectId,key) as {category:string;score:number;confidence:number;
       reasons_json:string;evaluator_id:string}|undefined;
-    const reasons=JSON.stringify(value.reasons),date=now();
+    const reasons=JSON.stringify(value.reasons);
+    this.db.prepare(
+      "INSERT INTO kb_assessments(project_id,entity_key,category,score,confidence,reasons_json,evaluator_id,updated_at) "+
+      "VALUES(?,?,?,?,?,?,?,?) ON CONFLICT(project_id,entity_key) DO UPDATE SET "+
+      "category=excluded.category,score=excluded.score,confidence=excluded.confidence,"+
+      "reasons_json=excluded.reasons_json,evaluator_id=excluded.evaluator_id,updated_at=excluded.updated_at"
+    ).run(projectId,key,value.category,value.score,value.confidence,reasons,evaluator,date);
+    if(!previous||previous.category!==value.category||previous.score!==value.score||
+      previous.confidence!==value.confidence||previous.reasons_json!==reasons||
+      previous.evaluator_id!==evaluator){
+      this.db.prepare(
+        "INSERT INTO kb_assessment_history(project_id,entity_key,category,score,confidence,reasons_json,evaluator_id,recorded_at) "+
+        "VALUES(?,?,?,?,?,?,?,?)"
+      ).run(projectId,key,value.category,value.score,value.confidence,reasons,evaluator,date);
+    }
+  }
+  updateAssessment(projectId:string,key:string,value:Assessment,evaluator:string):void{
     this.db.exec("BEGIN IMMEDIATE");
     try{
-      this.db.prepare(
-        "UPDATE kb_assessments SET category=?,score=?,confidence=?,reasons_json=?,evaluator_id=?,updated_at=? "+
-        "WHERE project_id=? AND entity_key=?"
-      ).run(value.category,value.score,value.confidence,reasons,evaluator,date,projectId,key);
-      if(!previous||previous.category!==value.category||previous.score!==value.score||
-        previous.confidence!==value.confidence||previous.reasons_json!==reasons||
-        previous.evaluator_id!==evaluator){
-        this.db.prepare(
-          "INSERT INTO kb_assessment_history(project_id,entity_key,category,score,confidence,reasons_json,evaluator_id,recorded_at) "+
-          "VALUES(?,?,?,?,?,?,?,?)"
-        ).run(projectId,key,value.category,value.score,value.confidence,reasons,evaluator,date);
-      }
+      this.writeAssessment(projectId,key,value,evaluator,now());
       this.db.exec("COMMIT");
     }catch(error){this.db.exec("ROLLBACK");throw error;}
   }

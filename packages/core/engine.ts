@@ -32,7 +32,8 @@ async function processItem(project:ProjectDefinition,source:ProjectDefinition["s
   let drafts:EntityDraft[]=[];
   for(const step of project.pipeline){
     const processor=registry.processors.get(step)!;
-    drafts=await processor.run(context,observation,drafts);
+    // Extensions may transform drafts, but must not mutate retained source data.
+    drafts=await processor.run(context,structuredClone(observation),drafts);
     if(!Array.isArray(drafts)||drafts.length>250)throw new Error("Processor output exceeds 250 entities");
     drafts=drafts.map(draft=>validateEntity(draft,project.entitySchemas));
   }
@@ -47,7 +48,8 @@ async function processItem(project:ProjectDefinition,source:ProjectDefinition["s
   }
   const results:Array<{draft:EntityDraft;assessment:Assessment}>=[];
   for(const draft of unique.values()){
-    const assessment=validateAssessment(await registry.evaluators.get(project.evaluator)!.assess(context,observation,draft));
+    const assessment=validateAssessment(await registry.evaluators.get(project.evaluator)!.assess(
+      context,structuredClone(observation),structuredClone(draft)));
     results.push({draft,assessment});
   }
   return results;
@@ -114,7 +116,8 @@ export async function runProject(dbPath:string,project:ProjectDefinition,registr
           if(signal.aborted)throw new Error("Processing aborted");
           // A page that fails during processing never enters this transaction.
           const committed=store.saveBatch(project.id,source,processed,page.nextCursor,
-            project.evaluator,project.watch?.rules||[]);
+            project.evaluator,project.watch?.rules||[],
+            project.pipeline.includes("observation-entity")&&source.config.entityNamespace===undefined);
           stats.observations+=committed.observations;
           stats.newEntities+=committed.newEntities;
           stats.duplicates+=committed.duplicates;
@@ -149,6 +152,7 @@ export async function runProject(dbPath:string,project:ProjectDefinition,registr
 export async function reprocessProject(dbPath:string,project:ProjectDefinition,registry:Registry,
   signal:AbortSignal=new AbortController().signal):Promise<{entities:number;reassessed:number}>{
   assertRegistered(project,registry);
+  signal=AbortSignal.any([signal]);
   const release=acquireLock(dbPath+".lock");
   let store:KnowledgeStore|undefined;
   const counters={entities:0,reassessed:0};
@@ -162,27 +166,40 @@ export async function reprocessProject(dbPath:string,project:ProjectDefinition,r
       if(signal.aborted)throw new Error("Reprocessing aborted");
       counters.entities++;
       const observations=store.db.prepare(
-        "SELECT o.connection_id,o.item_id,o.type,o.title,o.text,o.url,o.attributes_json,o.media_json,o.occurred_at "+
+        "SELECT o.connection_id,o.item_id,o.type,o.title,o.text,o.url,o.attributes_json,o.media_json,o.occurred_at,"+
+        "o.observation_json AS current_observation_json,m.observation_json AS mention_observation_json,"+
+        "m.evidence_json,m.draft_json "+
         "FROM kb_mentions m JOIN kb_observations o ON o.project_id=m.project_id "+
         "AND o.connection_id=m.connection_id AND o.item_id=m.item_id "+
-        "WHERE m.project_id=? AND m.entity_key=?"
+        "WHERE m.project_id=? AND m.entity_key=? AND m.active=1"
       ).all(project.id,entity.entity_key) as Array<Record<string,unknown>>;
-      const draft=validateEntity({key:entity.entity_key,type:entity.type,title:entity.title,
-        url:entity.url||undefined,attributes:JSON.parse(entity.attributes_json)},project.entitySchemas);
-      let best:Assessment|undefined;
+      const assessments:Array<{connectionId:string;observationId:string;assessment:Assessment}>=[];
       for(const row of observations){
+        if(signal.aborted)throw new Error("Reprocessing aborted");
         const source=project.sources.find(s=>s.id===row.connection_id);
         if(!source)continue;
-        const observation=validateObservation({id:row.item_id,type:row.type,
-          title:row.title||undefined,text:row.text||undefined,url:row.url||undefined,
+        // Complete inputs retain optional/empty values and per-mention evidence.
+        // Legacy rows without original snapshots use only their known fields.
+        const savedObservation=row.mention_observation_json??row.current_observation_json;
+        const observation=validateObservation(typeof savedObservation==="string"?
+          JSON.parse(savedObservation):{id:row.item_id,type:row.type,
+          title:row.title??undefined,text:row.text??undefined,url:row.url??undefined,
           attributes:JSON.parse(String(row.attributes_json||"{}")),
           media:JSON.parse(String(row.media_json||"[]")),
-          occurredAt:row.occurred_at||undefined});
+          occurredAt:row.occurred_at??undefined});
+        const draft=validateEntity(typeof row.draft_json==="string"?JSON.parse(row.draft_json):
+          {key:entity.entity_key,type:entity.type,title:entity.title,url:entity.url??undefined,
+            attributes:JSON.parse(entity.attributes_json),
+            evidence:JSON.parse(String(row.evidence_json||"[]"))},project.entitySchemas);
         const assessment=validateAssessment(await registry.evaluators.get(project.evaluator)!.assess(
-          {project,source,signal},observation,draft));
-        if(!best||assessment.score>best.score)best=assessment;
+          {project,source,signal},structuredClone(observation),structuredClone(draft)));
+        assessments.push({connectionId:source.id,observationId:String(row.item_id),assessment});
       }
-      if(best){store.updateAssessment(project.id,entity.entity_key,best,project.evaluator);counters.reassessed++;}
+      if(signal.aborted)throw new Error("Reprocessing aborted");
+      if(assessments.length){
+        store.updateMentionAssessments(project.id,entity.entity_key,assessments,project.evaluator);
+        counters.reassessed++;
+      }
     }
     return counters;
   }finally{try{store?.close();}finally{release();}}

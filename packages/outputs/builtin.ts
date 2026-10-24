@@ -43,6 +43,7 @@ const BASE=[
 ].join("\n");
 const markdown:OutputAdapter={
   id:"obsidian",
+  offline:true,
   export({project,records,config,databasePath,vaultPath}){
     if(!vaultPath)throw new Error("Obsidian output requires an explicit vault path");
     const folder=config.folder===undefined?"Discovery Engine":config.folder;
@@ -102,6 +103,7 @@ const markdown:OutputAdapter={
 };
 const json:OutputAdapter={
   id:"json",
+  offline:true,
   export({records}){
     return {entities:records.length,records};
   }

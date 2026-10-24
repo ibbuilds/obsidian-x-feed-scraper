@@ -4,6 +4,7 @@ import {loadProject} from "../../packages/core/project-config.ts";
 import {runProject,reprocessProject} from "../../packages/core/engine.ts";
 import {exportProject} from "../../packages/core/export-project.ts";
 import {KnowledgeStore} from "../../packages/storage/knowledge.ts";
+import {getWebhookDeliveryStatus} from "../../packages/outputs/webhook.ts";
 import type {ProjectDefinition} from "../../packages/sdk/contracts.ts";
 
 function opt(args:string[],name:string):string|undefined{
@@ -33,6 +34,7 @@ export async function projectCommand(args:string[]):Promise<void>{
     "  project reprocess --project FILE --db FILE (no network requests)",
     "  project changes --id PROJECT [--limit 50 --offset 0]",
     "  project alerts --id PROJECT [--limit 50]",
+    "  project deliveries --id PROJECT [--output OUTPUT_ID] (no network requests)",
     "  project versions --id PROJECT --key ENTITY_KEY [--limit 50]",
     "  project export --project FILE --db FILE [--vault /your/vault]",
     "  project reset-cursor --id PROJECT --connection CONNECTION --db FILE",
@@ -79,6 +81,8 @@ export async function projectCommand(args:string[]):Promise<void>{
     try{output(store.listVersions(required(args,"id"),required(args,"key"),
       number(args,"limit",50)));}
     finally{store.close();}
+  }else if(action==="deliveries"){
+    output(getWebhookDeliveryStatus(db,required(args,"id"),opt(args,"output")));
   }else if(action==="review"){
     const store=new KnowledgeStore(db);
     try{
