@@ -51,17 +51,17 @@ Entity schemas are optional manifest rules that type-check JSON attributes (`str
 
 ## Commands
 
-    npm run cli -- project help
-    npm run cli -- project sync --project examples/frontend/project.json --db ./data/discovery.db --page-size 100 --max-pages 100
-    npm run cli -- project list --db ./data/discovery.db
-    npm run cli -- project entities --id frontend-discovery --db ./data/discovery.db
-    npm run cli -- project review --id frontend-discovery --key "https://example.org/tool" --decision approved --reason "Verified"
-    npm run cli -- project reprocess --project examples/frontend/project.json --db ./data/discovery.db
-    npm run cli -- project export --project examples/frontend/project.json --db ./data/discovery.db --vault /path/to/test-vault
+    node --experimental-strip-types apps/collector/cli.ts project help
+    node --experimental-strip-types apps/collector/cli.ts project sync --project examples/frontend/project.json --db ./data/discovery.db --page-size 100 --max-pages 100
+    node --experimental-strip-types apps/collector/cli.ts project list --db ./data/discovery.db
+    node --experimental-strip-types apps/collector/cli.ts project entities --id frontend-discovery --db ./data/discovery.db
+    node --experimental-strip-types apps/collector/cli.ts project review --id frontend-discovery --key "https://example.org/tool" --decision approved --reason "Verified"
+    node --experimental-strip-types apps/collector/cli.ts project reprocess --project examples/frontend/project.json --db ./data/discovery.db
+    node --experimental-strip-types apps/collector/cli.ts project export --project examples/frontend/project.json --db ./data/discovery.db --vault /path/to/test-vault
 
 `reprocess` reevaluates persisted observations without querying any connector. To intentionally reset an unchanged source's cursor:
 
-    npm run cli -- project reset-cursor --id frontend-discovery --connection shared-observations --db ./data/discovery.db
+    node --experimental-strip-types apps/collector/cli.ts project reset-cursor --id frontend-discovery --connection shared-observations --db ./data/discovery.db
 
 ## Scheduler, CLI and Obsidian
 
