@@ -1,9 +1,9 @@
 {
-  "name": "discovery-engine",
-  "version": "0.9.1",
+  "name": "source-scraper",
+  "version": "0.10.0",
   "private": true,
   "type": "module",
-  "description": "Extensible local knowledge ingestion, research and curation engine",
+  "description": "JSON-first, source-independent data collection, curation and change tracking",
   "engines": {
     "node": ">=22.16.0"
   },
@@ -11,13 +11,15 @@
     "apps/obsidian-plugin"
   ],
   "scripts": {
-    "sync": "node --experimental-strip-types apps/collector/cli.ts sync",
-    "cli": "node --experimental-strip-types apps/collector/cli.ts",
-    "serve": "node --experimental-strip-types apps/collector/cli.ts serve",
+    "build:cli": "node scripts/build-cli.mjs",
+    "build:obsidian": "npm run build -w @discovery-engine/obsidian-plugin",
+    "build": "npm run build:cli && npm run build:obsidian",
+    "package": "npm run build && node apps/obsidian-plugin/package.mjs",
     "test": "node --experimental-strip-types --test tests/*.test.ts",
     "check": "tsc --noEmit",
-    "build": "npm run build -w @discovery-engine/obsidian-plugin",
-    "package": "npm run build && node apps/obsidian-plugin/package.mjs"
+    "smoke": "node scripts/ci-smoke.mjs",
+    "legacy:cli": "node --experimental-strip-types apps/collector/cli.ts",
+    "legacy:serve": "node --experimental-strip-types apps/collector/cli.ts serve"
   },
   "dependencies": {
     "fast-xml-parser": "^5.2.5"
@@ -27,5 +29,13 @@
     "typescript": "^5.8.3",
     "fflate": "^0.8.2"
   },
-  "license": "MIT"
+  "license": "MIT",
+  "bin": {
+    "source-scraper": "dist/source-scraper.mjs"
+  },
+  "files": [
+    "dist/source-scraper.mjs",
+    "LICENSE",
+    "README.md"
+  ]
 }
