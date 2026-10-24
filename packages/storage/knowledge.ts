@@ -1,5 +1,6 @@
 import {createHash,randomUUID} from "node:crypto";
 import {Store} from "./store.ts";
+import {acquireLock} from "../core/lock.ts";
 import type {ProjectDefinition,ProjectSource,Observation,EntityDraft,Assessment,KnowledgeEntity,ReviewState} from "../sdk/contracts.ts";
 
 type Row=Record<string,unknown>;
@@ -99,7 +100,11 @@ export class KnowledgeStore extends Store {
     return row?.cursor??undefined;
   }
   resetCursor(projectId:string,connectionId:string):void{
-    this.db.prepare("DELETE FROM kb_checkpoints WHERE project_id=? AND connection_id=?").run(projectId,connectionId);
+    const release=acquireLock(this.file+".lock");
+    try{
+      this.db.prepare("DELETE FROM kb_checkpoints WHERE project_id=? AND connection_id=?")
+        .run(projectId,connectionId);
+    }finally{release();}
   }
   beginRun(projectId:string,connectionId:string):string{
     const runId=randomUUID();
@@ -221,11 +226,18 @@ export class KnowledgeStore extends Store {
   reviewEntity(projectId:string,key:string,decision:"approved"|"rejected"|"pending",reason:string):KnowledgeEntity{
     if(!reason.trim()||reason.length>1000)throw new Error("A review reason is required (max 1000 characters)");
     if(!["approved","rejected","pending"].includes(decision))throw new Error("Invalid review decision");
-    if(!this.getEntity(projectId,key))throw new Error("Knowledge entity not found");
-    this.db.prepare(
-      "INSERT INTO kb_reviews(project_id,entity_key,decision,reason,reviewed_at) VALUES(?,?,?,?,?)"
-    ).run(projectId,key,decision,reason,now());
-    return this.getEntity(projectId,key)!;
+    const release=acquireLock(this.file+".lock");
+    try{
+      if(!this.getEntity(projectId,key))throw new Error("Knowledge entity not found");
+      this.db.exec("BEGIN IMMEDIATE");
+      try{
+        this.db.prepare(
+          "INSERT INTO kb_reviews(project_id,entity_key,decision,reason,reviewed_at) VALUES(?,?,?,?,?)"
+        ).run(projectId,key,decision,reason,now());
+        this.db.exec("COMMIT");
+      }catch(error){this.db.exec("ROLLBACK");throw error;}
+      return this.getEntity(projectId,key)!;
+    }finally{release();}
   }
   updateAssessment(projectId:string,key:string,value:Assessment,evaluator:string):void{
     this.db.prepare(
