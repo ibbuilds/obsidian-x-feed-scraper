@@ -3,7 +3,7 @@
  * Commands emit a single JSON document (or opt-in NDJSON) on stdout.
  * No implicit vault writes, network notifications or external output adapters.
  */
-import {existsSync,mkdirSync,readFileSync,writeFileSync} from "node:fs";
+import {existsSync,mkdirSync,readFileSync,realpathSync,writeFileSync} from "node:fs";
 import {dirname,join,resolve} from "node:path";
 import {fileURLToPath} from "node:url";
 import {createDefaultRegistry} from "../../packages/core/extensions.ts";
@@ -285,6 +285,6 @@ export async function main(argv:readonly string[]=process.argv.slice(2)):Promise
   const flags=argumentsToFlags(argv.slice(1),COMMAND_FLAGS[command]);
   await execute(command,flags);
 }
-if(process.argv[1]&&resolve(fileURLToPath(import.meta.url))===resolve(process.argv[1])){
+if(process.argv[1]&&realpathSync(resolve(fileURLToPath(import.meta.url)))===realpathSync(resolve(process.argv[1]))){
   main().catch(error=>{process.stderr.write("source-scraper: "+safeError(error)+"\n");process.exitCode=1;});
 }
