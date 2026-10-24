@@ -21,8 +21,7 @@ See `examples/frontend/project.json`, `examples/security/project.json` and `exam
         "excludeKeywords": ["sponsored"],
         "minimumScore": 25
       },
-      "outputs": [{"id":"vault","adapter":"obsidian",
-        "config":{"folder":"Discovery Engine"}}]
+      "outputs": []
     }
 
 Projects isolate entities, assessments, reviews, connections and checkpoints by project ID. A **connection ID and configuration fingerprint** define source identity. Changing the source configuration while reusing a checkpoint is rejected to prevent mixing unrelated datasets. Create a new connection ID for a genuinely new dataset.
@@ -49,19 +48,17 @@ The `keyword` evaluator uses per-project inclusion/exclusion criteria and public
 
 Entity schemas are optional manifest rules that type-check JSON attributes (`string`, `number` or `boolean`, with optional required fields). Custom processors and evaluators can be registered via the public SDK.
 
-## Commands
+## Commands — CLI first
 
-    node --experimental-strip-types apps/collector/cli.ts project help
-    node --experimental-strip-types apps/collector/cli.ts project sync --project examples/frontend/project.json --db ./data/discovery.db --page-size 100 --max-pages 100
-    node --experimental-strip-types apps/collector/cli.ts project list --db ./data/discovery.db
-    node --experimental-strip-types apps/collector/cli.ts project entities --id frontend-discovery --db ./data/discovery.db
-    node --experimental-strip-types apps/collector/cli.ts project review --id frontend-discovery --key "https://example.org/tool" --decision approved --reason "Verified"
-    node --experimental-strip-types apps/collector/cli.ts project reprocess --project examples/frontend/project.json --db ./data/discovery.db
-    node --experimental-strip-types apps/collector/cli.ts project export --project examples/frontend/project.json --db ./data/discovery.db --vault /path/to/test-vault
+    node dist/source-scraper.mjs validate --config examples/frontend/project.json
+    node dist/source-scraper.mjs run --config examples/frontend/project.json --db ./data/discovery.db --page-size 100 --max-pages 100
+    node dist/source-scraper.mjs projects --db ./data/discovery.db
+    node dist/source-scraper.mjs query --id frontend-discovery --db ./data/discovery.db
+    node dist/source-scraper.mjs review --id frontend-discovery --db ./data/discovery.db --key "https://example.org/tool" --decision approved --reason "Verified"
+    node dist/source-scraper.mjs reprocess --config examples/frontend/project.json --db ./data/discovery.db
+    node dist/source-scraper.mjs export --id frontend-discovery --db ./data/discovery.db --out ./sources.json
 
-`reprocess` reevaluates persisted observations without querying any connector. To intentionally reset an unchanged source's cursor:
-
-    node --experimental-strip-types apps/collector/cli.ts project reset-cursor --id frontend-discovery --connection shared-observations --db ./data/discovery.db
+All new commands produce JSON directly; `export` never writes to an Obsidian vault. For the legacy integration-only `project export`, `project reset-cursor` and webhook actions, see `apps/collector/project-cli.ts`. See [CLI](cli.md) for the stable `schemaVersion: 1` contract and output file behavior.
 
 ## Scheduler, CLI and Obsidian
 
