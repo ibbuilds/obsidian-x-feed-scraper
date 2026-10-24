@@ -15,6 +15,20 @@ Both scripts generate temporary local JSON/SQLite fixtures and delete them after
 
 The [CI performance workflow](../.github/workflows/performance.yml) compares the immutable v0.10.0 commit `1bc4759ec514b74d974d318af35f7b27bb2dd6b9` and the candidate using two separate source checkouts and the **same runner**. The old source receives only the identical benchmark script. Results are uploaded as JSON artifacts. The workflow checks query-plan use of the new review index and requires measured speedups for entity listing, evidence lookups, append-only JSON pagination and snapshot pagination.
 
+## Recorded comparison
+
+The first same-runner [CI profile](https://github.com/ibbuilds/source-scraper/actions/runs/40084011545) used Node.js 22.16.0 on Linux. Values below are single measurements of a synthetic workload and are not general throughput claims.
+
+| Phase | v0.10 baseline | v0.11 candidate | Relative speedup |
+| --- | ---: | ---: | ---: |
+| Collect 1,200 records | 499.15 ms | 198.65 ms | 2.51× |
+| List 1,200 entities with 12,000 reviews | 119.03 ms | 9.89 ms | 12.0× |
+| Fetch evidence for 300 entities | 246.26 ms | 14.02 ms | 17.6× |
+| `json-file`, 6,000 records in pages of 50 | 455.52 ms | 21.81 ms | 20.9× |
+| `json-snapshot`, same pagination | 389.08 ms | 11.31 ms | 34.4× |
+
+The review query plan changed from `SCAN kb_reviews` to `SEARCH kb_reviews USING INDEX kb_reviews_lookup (project_id=? AND entity_key=?)`. Building review fixtures became slightly slower (36.46 ms → 39.71 ms), which is an expected tradeoff of maintaining indexes. A separately isolated real-user benchmark is needed to estimate performance on external sources.
+
 ## Measured operations
 
 | Workload | What it tests | Optimization |
