@@ -211,6 +211,66 @@ class SourceView extends ItemView {
         stats.active?"Synchronization running":"Collector active; service bound to localhost only"});
       if(stats.lastRun)root.createEl("p",{cls:"xfs-meta",text:"Last run: "+
         (stats.lastRun.ended_at||stats.lastRun.started_at)+" ("+stats.lastRun.status+")"});
+      const generic=root.createDiv({cls:"xfs-projects"});
+      generic.createEl("h4",{text:"Knowledge projects"});
+      const active=stats.activeProjectId;
+      const projects=await this.plugin.call("/projects") as KnowledgeProject[];
+      for(const item of projects.slice(0,20)){
+        generic.createEl("p",{cls:"xfs-meta",text:item.name+" · "+
+          item.entities+" entities · "+item.observations+" observations"+
+          (item.id===active?" · active":" · stored")});
+      }
+      if(active){
+        const projectActions=generic.createDiv({cls:"xfs-actions"});
+        button(projectActions,"Run research project",()=>{void this.projectAction("/project/sync");});
+        button(projectActions,"Reevaluate stored data",()=>{void this.projectAction("/project/reprocess");});
+        button(projectActions,"Export project",()=>{void this.projectAction("/project/export");});
+        const controls=generic.createDiv({cls:"xfs-controls"});
+        const search=controls.createEl("input",{attr:{placeholder:"Search project knowledge"}});
+        search.value=this.projectQuery;
+        button(controls,"Search",()=>{
+          this.projectQuery=search.value.trim().slice(0,100);
+          this.projectPage=0;void this.draw();
+        });
+        const query="/project/entities?project="+encodeURIComponent(active)+
+          "&limit=40&offset="+(this.projectPage*40)+
+          (this.projectQuery?"&q="+encodeURIComponent(this.projectQuery):"");
+        const records=await this.plugin.call(query) as KnowledgeRecord[];
+        const pager=controls.createDiv({cls:"xfs-actions"});
+        button(pager,"Previous",()=>{
+          this.projectPage=Math.max(0,this.projectPage-1);void this.draw();
+        }).disabled=this.projectPage===0;
+        pager.createSpan({text:"Page "+(this.projectPage+1)});
+        button(pager,"Next",()=>{this.projectPage++;void this.draw();}).disabled=records.length<40;
+        if(!records.length)generic.createEl("p",{cls:"xfs-muted",
+          text:"No records yet. Run the configured project to collect its sources."});
+        for(const record of records){
+          const card=generic.createDiv({cls:"xfs-card"});
+          card.createEl("h5",{text:record.title||record.key});
+          card.createEl("p",{cls:"xfs-meta",
+            text:record.type+" · "+record.category+" · "+record.review+" · "+
+              record.score+"/100 · confidence "+Math.round(record.confidence*100)+
+              "% · "+record.observationCount+" observations"});
+          if(record.url)external(card,"Open resource",record.url);
+          card.createEl("p",{text:record.reasons.join(" · ")});
+          const details=card.createEl("details");
+          details.createEl("summary",{text:"Structured attributes"});
+          details.createEl("p",{text:JSON.stringify(record.attributes).slice(0,1600)});
+          const choices=card.createDiv({cls:"xfs-actions"});
+          for(const [decision,label] of [
+            ["approved","Approve"],["rejected","Reject"],["pending","Reopen"]
+          ] as Array<["approved"|"rejected"|"pending",string]>){
+            if(decision===record.review)continue;
+            button(choices,label,()=>new KnowledgeReviewModal(
+              this.plugin,active,record,decision,()=>{void this.draw();}
+            ).open());
+          }
+        }
+      }else{
+        generic.createEl("p",{cls:"xfs-muted",text:
+          "Choose a research project manifest under Settings, or use the independent project CLI."});
+      }
+      generic.createEl("h4",{text:"X Feed Scraper (legacy curation)"});
       const actions=root.createDiv({cls:"xfs-actions"});
       button(actions,"Refresh",()=>{void this.draw();});
       button(actions,"Diagnostics",()=>{
@@ -330,6 +390,18 @@ class SourceView extends ItemView {
       root.createEl("p",{text:"Collector error: "+asError(e)});
       button(root,"Restart local engine",()=>{void this.plugin.restart().then(()=>this.draw()).catch(e=>new Notice(asError(e)));});
     }
+  }
+  private async projectAction(path:string):Promise<void>{
+    try{
+      const raw=await this.plugin.call(path,"POST");
+      this.plugin.notifyExport(raw);
+      const run=(raw as {result?:{success?:boolean;runs?:Array<{error?:string}>}}).result;
+      if(run?.success===false){
+        const errors=(run.runs||[]).map(item=>item.error).filter(Boolean);
+        new Notice("Some project sources failed: "+errors.slice(0,2).join("; "),10000);
+      }
+      await this.draw();
+    }catch(error){new Notice(asError(error));}
   }
   private async action(path:string):Promise<void>{
     try{
