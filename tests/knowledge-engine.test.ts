@@ -1,0 +1,199 @@
+import {test} from "node:test";
+import assert from "node:assert/strict";
+import {mkdtempSync,mkdirSync,readFileSync,writeFileSync,readdirSync,rmSync} from "node:fs";
+import {tmpdir} from "node:os";
+import {join,resolve} from "node:path";
+import {spawnSync} from "node:child_process";
+import {createDefaultRegistry} from "../packages/core/extensions.ts";
+import {registry,registerExtension} from "../packages/core/registry.ts";
+import {loadProject,parseProject,validateEntity} from "../packages/core/project-config.ts";
+import {runProject,reprocessProject} from "../packages/core/engine.ts";
+import {KnowledgeStore} from "../packages/storage/knowledge.ts";
+import {Store} from "../packages/storage/store.ts";
+import {ingest} from "../packages/core/pipeline.ts";
+import {readFixture} from "../packages/connectors/fixtures.ts";
+import {loadProfile} from "../packages/core/profile.ts";
+
+function demo(name:"frontend"|"security"){
+ const manifest=resolve("examples",name,"project.json");
+ const project=loadProject(manifest);
+ project.sources[0].config.path=resolve("examples/shared/observations.json");
+ return project;
+}
+test("different projects use same observations and reusable engine, including entities without links",async()=>{
+ const root=mkdtempSync(join(tmpdir(),"discovery-general-")),db=join(root,"knowledge.sqlite");
+ try{
+  const registry=createDefaultRegistry(),frontend=demo("frontend"),security=demo("security");
+  const first=await runProject(db,frontend,registry,{pageSize:2});
+  const second=await runProject(db,security,registry,{pageSize:2});
+  assert.equal(first.success,true,JSON.stringify(first.runs));
+  assert.equal(second.success,true,JSON.stringify(second.runs));
+  assert.equal(first.observations,4);
+  assert.equal(second.observations,4);
+  const store=new KnowledgeStore(db);
+  assert.equal(store.listProjects().length,2);
+  const repo=store.getEntity(frontend.id,"https://github.com/example/motion-kit")!;
+  assert.ok(repo);
+  assert.equal(repo.type,"web-resource");
+  assert.equal(repo.observationCount,2,"Two posts must cite the same entity");
+  const advisory=store.getEntity(security.id,"security-advisory:security-note")!;
+  assert.equal(advisory.type,"security-advisory");
+  assert.equal(advisory.attributes.severity,"high");
+  assert.ok(advisory.score>=50);
+  const science=store.getEntity(security.id,"research-note:science-note")!;
+  assert.equal(science.url,undefined,"Non-web research entities must be accepted");
+  assert.equal(store.getEntity(security.id,"https://github.com/example/motion-kit"),undefined);
+  const approved=store.reviewEntity(frontend.id,repo.key,"approved","Verified source");
+  assert.equal(approved.review,"approved");
+  store.close();
+  const again=await runProject(db,frontend,registry);
+  assert.equal(again.success,true);
+  assert.equal(again.observations,0,"JSON cursor prevents replaying already ingested observations");
+  const reopened=new KnowledgeStore(db);
+  assert.equal(reopened.getEntity(frontend.id,repo.key)?.review,"approved");
+  assert.equal(reopened.listEntities(frontend.id).filter(x=>x.key===repo.key).length,1);
+  reopened.close();
+ }finally{rmSync(root,{recursive:true,force:true});}
+});
+test("resumable paging does not advance cursors when processor fails",async()=>{
+ const root=mkdtempSync(join(tmpdir(),"discovery-checkpoint-")),db=join(root,"knowledge.sqlite");
+ try{
+  let broken=true;
+  const ext=registry();
+  registerExtension(ext,{apiVersion:1,adapters:[{id:"paged",
+    async collect({cursor}){
+      if(!cursor)return {observations:[{id:"1",type:"ticket",title:"First"}],nextCursor:"1",hasMore:true};
+      return {observations:[{id:broken?"":"2",type:"ticket",title:"Second"}],
+        nextCursor:"done",hasMore:false};
+    }
+  }],processors:[{id:"extract",
+    run(_context,obs){return [{key:"ticket:"+obs.id,type:"ticket",title:obs.title||obs.id}];}
+  }],evaluators:[{id:"neutral",
+    assess(){return {category:"work",score:50,confidence:0.5,reasons:["Observed ticket"]};}
+  }]});
+  const project=parseProject({id:"resumable",name:"Resumable Project",sources:[{
+    id:"tickets",adapter:"paged",config:{}
+  }],pipeline:["extract"],evaluator:"neutral",policy:{includeKeywords:[],
+    excludeKeywords:[],minimumScore:0}});
+  const failed=await runProject(db,project,ext,{pageSize:1});
+  assert.equal(failed.success,false);
+  const check=new KnowledgeStore(db);
+  assert.equal(check.cursor("resumable","tickets"),"1");
+  assert.equal(check.listEntities("resumable").length,1);
+  assert.equal(check.runs("resumable")[0].status,"failed");
+  check.close();
+  broken=false;
+  const recovered=await runProject(db,project,ext,{pageSize:1});
+  assert.equal(recovered.success,true);
+  assert.equal(recovered.observations,1);
+  const final=new KnowledgeStore(db);
+  assert.equal(final.listEntities("resumable").length,2);
+  assert.equal(final.cursor("resumable","tickets"),"done");
+  final.close();
+ }finally{rmSync(root,{recursive:true,force:true});}
+});
+test("offline reprocessing changes score but never loses human review or refetches sources",async()=>{
+ const root=mkdtempSync(join(tmpdir(),"discovery-reprocess-")),db=join(root,"knowledge.sqlite");
+ try{
+  const registry=createDefaultRegistry(),project=demo("frontend");
+  await runProject(db,project,registry);
+  const before=new KnowledgeStore(db);
+  const key="https://github.com/example/motion-kit";
+  assert.ok(before.getEntity(project.id,key)!.score>0);
+  before.reviewEntity(project.id,key,"approved","Human review must persist");
+  before.close();
+  project.policy.includeKeywords=["quantum-accelerator-unlikely"];
+  const reassessed=await reprocessProject(db,project,registry);
+  assert.ok(reassessed.reassessed>=3);
+  const after=new KnowledgeStore(db);
+  assert.equal(after.getEntity(project.id,key)!.score,0);
+  assert.equal(after.getEntity(project.id,key)!.review,"approved");
+  after.close();
+ }finally{rmSync(root,{recursive:true,force:true});}
+});
+test("generic Obsidian sink protects existing References and user-modified notes",async()=>{
+ const root=mkdtempSync(join(tmpdir(),"discovery-export-")),db=join(root,"knowledge.sqlite");
+ const vault=join(root,"vault");mkdirSync(vault);
+ const references="# Existing\n- [Untouched](https://example.org/old)\n";
+ writeFileSync(join(vault,"References.md"),references);
+ try{
+  const registry=createDefaultRegistry(),project=demo("frontend");
+  await runProject(db,project,registry);
+  const store=new KnowledgeStore(db);
+  const records=store.listEntities(project.id).filter(x=>x.score>=project.policy.minimumScore);
+  store.close();
+  const adapter=registry.outputs.get("obsidian")!;
+  const opts={project,records,config:{folder:"Discovery Engine"},databasePath:db,vaultPath:vault};
+  const first=await adapter.export(opts) as {created:number};
+  assert.ok(first.created>=2);
+  const dir=join(vault,"Discovery Engine",project.id);
+  const note=readdirSync(dir).find(name=>name.endsWith(".md"))!;
+  const path=join(dir,note),original=readFileSync(path,"utf8");
+  writeFileSync(path,original+"\nMy annotation\n");
+  const after=await adapter.export(opts) as {conflicts:number;conflictPaths:string[]};
+  assert.ok(after.conflicts>=1);
+  assert.ok(after.conflictPaths.some(p=>p.endsWith(note)));
+  assert.equal(readFileSync(path,"utf8"),original+"\nMy annotation\n");
+  assert.equal(readFileSync(join(vault,"References.md"),"utf8"),references);
+ }finally{rmSync(root,{recursive:true,force:true});}
+});
+test("v0.4 database migration preserves posts, source relationships and reviews; it is idempotent",()=>{
+ const root=mkdtempSync(join(tmpdir(),"discovery-legacy-")),db=join(root,"existing.db");
+ try{
+  const fixture=readFixture("./tests/fixtures/posts.json");
+  ingest(db,fixture,loadProfile("./profiles/design.json"));
+  const old=new Store(db);
+  const source=old.listSources().find(s=>s.url.startsWith("https://github.com/"))!;
+  old.review(source.id,"approved","Important previous review");
+  const oldStats=old.stats();old.close();
+  const newStore=new KnowledgeStore(db);
+  const migrated=newStore.getEntity("legacy-x-feed",source.url)!;
+  assert.ok(migrated);
+  assert.equal(migrated.review,"approved");
+  assert.ok(migrated.observationCount>=1);
+  assert.equal(newStore.listObservations("legacy-x-feed").length,4);
+  newStore.close();
+  const again=new KnowledgeStore(db);
+  assert.equal(again.listEntities("legacy-x-feed").length,3);
+  assert.equal(again.db.prepare("SELECT COUNT(*) n FROM kb_reviews").get()?.n,1);
+  assert.equal(again.stats().posts,oldStats.posts);
+  again.close();
+ }finally{rmSync(root,{recursive:true,force:true});}
+});
+test("independent CJS extension supplies a new adapter, extractor and evaluator",async()=>{
+ const root=mkdtempSync(join(tmpdir(),"discovery-extension-")),db=join(root,"library.db");
+ try{
+  const registry=createDefaultRegistry([resolve("examples/extensions/tickets.cjs")]);
+  const project=loadProject(resolve("examples/tickets/project.json"));
+  const result=await runProject(db,project,registry,{pageSize:1});
+  assert.equal(result.success,true,JSON.stringify(result.runs));
+  const store=new KnowledgeStore(db);
+  assert.equal(store.getEntity(project.id,"ticket:T-1")!.score,100);
+  assert.equal(store.getEntity(project.id,"ticket:T-2")!.score,40);
+  store.close();
+ }finally{rmSync(root,{recursive:true,force:true});}
+});
+test("strict schemas and malformed projects fail before ingesting any data",()=>{
+ assert.throws(()=>parseProject({id:"__invalid__",name:"X",sources:[]}),/source|id/i);
+ assert.throws(()=>validateEntity({key:"e",type:"ticket",title:"Bad",attributes:{severity:12}},
+   {ticket:{fields:{severity:"string"},required:["severity"]}}),/Invalid attribute/);
+ assert.throws(()=>parseProject({id:"usable",name:"test",sources:[
+   {id:"dup",adapter:"rss",config:{}},{id:"dup",adapter:"rss",config:{}}
+ ]}),/Duplicate connection/);
+});
+test("project CLI runs without Obsidian and persists a queryable library",()=>{
+ const root=mkdtempSync(join(tmpdir(),"discovery-cli-")),db=join(root,"knowledge.db");
+ try{
+  const first=spawnSync(process.execPath,["--experimental-strip-types","apps/collector/cli.ts",
+    "project","sync","--project","examples/frontend/project.json","--db",db,"--page-size","2"],
+    {encoding:"utf8",timeout:25000});
+  assert.equal(first.status,0,first.stderr);
+  const result=JSON.parse(first.stdout) as {success:boolean;observations:number};
+  assert.equal(result.success,true);
+  assert.equal(result.observations,4);
+  const second=spawnSync(process.execPath,["--experimental-strip-types","apps/collector/cli.ts",
+    "project","entities","--id","frontend-discovery","--db",db],{encoding:"utf8",timeout:25000});
+  assert.equal(second.status,0,second.stderr);
+  assert.ok((JSON.parse(second.stdout) as unknown[]).length>=4);
+ }finally{rmSync(root,{recursive:true,force:true});}
+});
