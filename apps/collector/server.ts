@@ -15,7 +15,6 @@ import {createDefaultRegistry} from "../../packages/core/extensions.ts";
 import {runProject,reprocessProject} from "../../packages/core/engine.ts";
 import {exportProject} from "../../packages/core/export-project.ts";
 import {KnowledgeStore} from "../../packages/storage/knowledge.ts";
-import {acquireLock} from "../../packages/core/lock.ts";
 
 export interface ServerOptions {
   db:string;profile:Profile;fixture?:string;feed?:string;vault?:string;references?:string;
@@ -219,15 +218,12 @@ export function startServer(config:ServerOptions):ReturnType<typeof createServer
         }
         busy=true;
         try{
-          const release=acquireLock(config.db+".lock");
+          const knowledge=new KnowledgeStore(config.db);
           let reviewed:unknown;
           try{
-            const knowledge=new KnowledgeStore(config.db);
-            try{
-              reviewed=knowledge.reviewEntity(projectId,key,
-                decision as "approved"|"rejected"|"pending",reason);
-            }finally{knowledge.close();}
-          }finally{release();}
+            reviewed=knowledge.reviewEntity(projectId,key,
+              decision as "approved"|"rejected"|"pending",reason);
+          }finally{knowledge.close();}
           json(res,200,{entity:reviewed});
         }finally{busy=false;}
         return;
