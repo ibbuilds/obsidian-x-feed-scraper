@@ -6,6 +6,7 @@ on:
       - "apps/collector/**"
       - "scripts/bench-engine.mjs"
       - "scripts/bench-repeat.mjs"
+      - "scripts/bench-export.mjs"
       - ".github/workflows/performance.yml"
   workflow_dispatch:
 permissions:
@@ -27,19 +28,25 @@ jobs:
           node-version: '22.16.0'
       - run: npm ci --prefix candidate --no-audit --no-fund
       - run: npm ci --prefix baseline --no-audit --no-fund
+      - name: Build standalone CLI binaries for export profile
+        run: |
+          npm run build:cli --prefix candidate
+          npm run build:cli --prefix baseline
       - name: Profile baseline on a clean SQLite database
         run: |
-          cp candidate/scripts/bench-engine.mjs candidate/scripts/bench-pagination.mjs candidate/scripts/bench-repeat.mjs baseline/scripts/
+          cp candidate/scripts/bench-engine.mjs candidate/scripts/bench-pagination.mjs candidate/scripts/bench-repeat.mjs candidate/scripts/bench-export.mjs baseline/scripts/
           cd baseline
           node --experimental-strip-types scripts/bench-engine.mjs 1200 12000 > ../baseline-profile.json
           node --experimental-strip-types scripts/bench-pagination.mjs 6000 50 > ../baseline-pagination.json
           node --experimental-strip-types scripts/bench-repeat.mjs 1800 > ../baseline-repeat.json
+          node --experimental-strip-types scripts/bench-export.mjs 1400 12 > ../baseline-export.json
       - name: Profile candidate with identical synthetic data
         run: |
           cd candidate
           node --experimental-strip-types scripts/bench-engine.mjs 1200 12000 > ../candidate-profile.json
           node --experimental-strip-types scripts/bench-pagination.mjs 6000 50 > ../candidate-pagination.json
           node --experimental-strip-types scripts/bench-repeat.mjs 1800 > ../candidate-repeat.json
+          node --experimental-strip-types scripts/bench-export.mjs 1400 12 > ../candidate-export.json
       - name: Compare critical hot paths without source or network dependencies
         run: |
           node --input-type=module - <<'NODE'
@@ -82,6 +89,19 @@ jobs:
           if(newRepeat.phases.initialMs>oldRepeat.phases.initialMs*1.4){
             throw new Error('Initial ingestion regressed more than 40%');
           }
+          const oldExport=JSON.parse(readFileSync('baseline-export.json','utf8'));
+          const newExport=JSON.parse(readFileSync('candidate-export.json','utf8'));
+          for(const name of ['fullMs','compactMs']){
+            const before=oldExport.times[name],after=newExport.times[name];
+            console.log('export '+name+': baseline '+before+' ms, candidate '+after+
+              ' ms; ratio '+(after/Math.max(before,0.01)).toFixed(3));
+          }
+          if(newExport.times.fullMs>=oldExport.times.fullMs*0.9){
+            throw new Error('Batched provenance export did not improve full JSON export by >=10%');
+          }
+          if(newExport.times.compactMs>oldExport.times.compactMs*1.5){
+            throw new Error('Compact export slowed by more than 50%');
+          }
           NODE
       - uses: actions/upload-artifact@v4
         if: always()
@@ -94,4 +114,6 @@ jobs:
             candidate-pagination.json
             baseline-repeat.json
             candidate-repeat.json
+            baseline-export.json
+            candidate-export.json
           retention-days: 30
