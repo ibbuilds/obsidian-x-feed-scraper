@@ -3,6 +3,7 @@ import type {Post} from "./types.ts";
 
 const DROP = new Set(["fbclid", "gclid", "dclid", "igshid", "mc_cid", "mc_eid", "ref_src", "ref_url", "si"]);
 const X_HOSTS = new Set(["x.com", "www.x.com", "twitter.com", "www.twitter.com"]);
+const SECRET_QUERY_KEY = /(?:^|[_-])(?:token|accesskey|apikey|api[_-]?key|key|secret|password|passwd|pwd|session|sessionid|auth|authorization|jwt|signature|sig|cookie)(?:$|[_-])/i;
 
 export function normalizeUrl(value: string): string {
   const url = new URL(value.trim());
@@ -13,6 +14,9 @@ export function normalizeUrl(value: string): string {
   if ((url.protocol === "https:" && url.port === "443") || (url.protocol === "http:" && url.port === "80")) url.port = "";
   for (const key of [...url.searchParams.keys()]) {
     if (DROP.has(key.toLowerCase()) || key.toLowerCase().startsWith("utm_")) url.searchParams.delete(key);
+  }
+  for(const key of url.searchParams.keys()){
+    if(SECRET_QUERY_KEY.test(key))throw new Error("URL contains a credential-like query parameter");
   }
   url.searchParams.sort();
   url.pathname = url.pathname.replace(/\/+$/, "") || "/";
