@@ -617,22 +617,36 @@ export class KnowledgeStore extends Store {
       confidence:current.confidence,reasons:JSON.parse(current.reasons_json) as string[]},
       current.evaluator_id,date);
   }
+  /** Preserve the existing one-entity public API for custom SDK consumers. */
   updateMentionAssessments(projectId:string,key:string,values:Array<{
     connectionId:string;observationId:string;assessment:Assessment
   }>,evaluator:string):void{
     if(!values.length)return;
+    this.updateMentionAssessmentsBatch(projectId,[{key,values}],evaluator);
+  }
+  /**
+   * Reassessment is transactionally committed in bounded groups. This avoids
+   * one BEGIN/COMMIT for every unchanged entity while retaining crash-safe
+   * checkpoints between groups and preserving all independent human reviews.
+   */
+  updateMentionAssessmentsBatch(projectId:string,batch:readonly {
+    key:string;values:Array<{connectionId:string;observationId:string;assessment:Assessment}>
+  }[],evaluator:string):void{
+    if(!batch.length)return;
+    if(batch.length>100)throw new Error("Reassessment batch exceeds 100 entities");
     const date=now();
     this.db.exec("BEGIN IMMEDIATE");
     try{
-      // Offline reprocessing replaces the set evaluated under the current
-      // project configuration. Historical mentions and reviews remain intact.
-      this.prepareCached("DELETE FROM kb_mention_assessments WHERE project_id=? AND entity_key=?")
-        .run(projectId,key);
-      for(const value of values){
-        this.writeMentionAssessment(projectId,key,value.connectionId,value.observationId,
-          value.assessment,evaluator,date);
+      for(const {key,values} of batch){
+        if(!values.length)continue;
+        this.prepareCached("DELETE FROM kb_mention_assessments WHERE project_id=? AND entity_key=?")
+          .run(projectId,key);
+        for(const value of values){
+          this.writeMentionAssessment(projectId,key,value.connectionId,value.observationId,
+            value.assessment,evaluator,date);
+        }
+        this.refreshAssessment(projectId,key,date);
       }
-      this.refreshAssessment(projectId,key,date);
       this.db.exec("COMMIT");
     }catch(error){this.db.exec("ROLLBACK");throw error;}
   }
