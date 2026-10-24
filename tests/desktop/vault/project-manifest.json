@@ -1,0 +1,34 @@
+{
+  "id": "desktop-generic",
+  "name": "Independent Research Project",
+  "sources": [
+    {
+      "id": "local-lab",
+      "adapter": "json-file",
+      "config": {
+        "path": "generic-observations.json"
+      }
+    }
+  ],
+  "pipeline": [
+    "observation-entity"
+  ],
+  "evaluator": "keyword",
+  "policy": {
+    "includeKeywords": [
+      "research",
+      "sample"
+    ],
+    "excludeKeywords": [],
+    "minimumScore": 20
+  },
+  "outputs": [
+    {
+      "id": "notes",
+      "adapter": "obsidian",
+      "config": {
+        "folder": "Discovery Engine"
+      }
+    }
+  ]
+}

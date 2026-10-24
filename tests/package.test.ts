@@ -13,9 +13,10 @@ test("Obsidian distribution ships complete installable desktop plugin",()=>{
   }
   const manifest=JSON.parse(Buffer.from(archiveEntries["manifest.json"]).toString("utf8")) as {id:string;version:string;isDesktopOnly:boolean};
   assert.equal(manifest.id,"x-feed-scraper");
+  assert.equal((manifest as unknown as {name:string}).name,"Discovery Engine");
   assert.equal(manifest.isDesktopOnly,true);
   assert.equal((manifest as unknown as {minAppVersion:string}).minAppVersion,"1.9.2");
-  assert.equal(manifest.version,"0.4.0");
+  assert.equal(manifest.version,"0.5.0");
   assert.ok(statSync(archive).size>10000);
   assert.equal(archiveEntries["collector.cjs"],undefined,"Collector must remain embedded in main.js");
   assert.equal(archiveEntries["design.json"],undefined,"Profile must remain embedded in main.js");

@@ -15,6 +15,8 @@ export interface BridgeConfig {
   confidence:number;
   preferFree:boolean;
   autoEnrich?:boolean;
+  projectPath?:string;
+  extensionPath?:string;
 }
 export class LocalBridge {
   private child?:ChildProcessWithoutNullStreams;
@@ -47,6 +49,8 @@ export class LocalBridge {
     ];
     if(config.feedUrl)args.push("--feed",config.feedUrl);
     if(config.fixturePath)args.push("--fixture",config.fixturePath);
+    if(config.projectPath)args.push("--project",config.projectPath);
+    if(config.extensionPath)args.push("--extension",config.extensionPath);
     this.lastError="";
     return new Promise<number>((resolve,reject)=>{
       let ready=false,settled=false,output="";

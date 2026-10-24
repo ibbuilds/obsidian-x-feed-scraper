@@ -1,0 +1,20 @@
+[
+  {
+    "id": "lab-1",
+    "type": "lab-note",
+    "title": "Independent research record",
+    "text": "A useful sample research finding",
+    "attributes": {
+      "domain": "biophysics"
+    }
+  },
+  {
+    "id": "lab-2",
+    "type": "lab-note",
+    "title": "Another sample",
+    "text": "Second sample independent observation",
+    "attributes": {
+      "domain": "biology"
+    }
+  }
+]

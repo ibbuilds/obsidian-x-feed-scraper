@@ -10,10 +10,16 @@ import {Store} from "../../packages/storage/store.ts";
 import type {Profile,Post} from "../../packages/core/types.ts";
 import {join} from "node:path";
 import {existsSync} from "node:fs";
+import {loadProject} from "../../packages/core/project-config.ts";
+import {createDefaultRegistry} from "../../packages/core/extensions.ts";
+import {runProject,reprocessProject} from "../../packages/core/engine.ts";
+import {exportProject} from "../../packages/core/export-project.ts";
+import {KnowledgeStore} from "../../packages/storage/knowledge.ts";
 
 export interface ServerOptions {
   db:string;profile:Profile;fixture?:string;feed?:string;vault?:string;references?:string;
   token:string;port:number;intervalMinutes:number;autoEnrich?:boolean;
+  projectPath?:string;extensionPath?:string;
 }
 function json(res:ServerResponse,code:number,value:unknown):void {
   res.writeHead(code,{"content-type":"application/json; charset=utf-8","cache-control":"no-store",
@@ -78,6 +84,12 @@ export function startServer(config:ServerOptions):ReturnType<typeof createServer
   if(config.feed&&config.intervalMinutes>0&&config.intervalMinutes<15){
     throw new Error("RSS schedules must be at least 15 minutes");
   }
+  const configuredProject=config.projectPath?loadProject(config.projectPath):undefined;
+  const projectRegistry=configuredProject?
+    createDefaultRegistry(config.extensionPath?[config.extensionPath]:[]):undefined;
+  if(configuredProject&&config.intervalMinutes>0&&config.intervalMinutes<15){
+    throw new Error("Scheduled project collection must be at least 15 minutes");
+  }
   const initial=new Store(config.db);
   let paused=initial.paused();initial.close();
   let busy=false;
@@ -108,6 +120,42 @@ export function startServer(config:ServerOptions):ReturnType<typeof createServer
       }
       throw error;
     }finally{busy=false;}
+  };
+  const requireProject=()=>{
+    if(!configuredProject||!projectRegistry){
+      throw new Error("Configure an explicit project manifest to use the generic engine");
+    }
+    return {project:configuredProject,registry:projectRegistry};
+  };
+  const collectProject=async()=>{
+    const {project,registry}=requireProject();
+    if(paused)throw new Error("Collector is paused");
+    if(busy)throw new Error("Collector is busy");
+    busy=true;
+    try{
+      const result=await runProject(config.db,project,registry);
+      const exports=project.outputs.length?
+        await exportProject(config.db,project,registry,config.vault):null;
+      return {result,exports};
+    }finally{busy=false;}
+  };
+  const reassessProject=async()=>{
+    const {project,registry}=requireProject();
+    if(busy)throw new Error("Collector is busy");
+    busy=true;
+    try{
+      const result=await reprocessProject(config.db,project,registry);
+      const exports=project.outputs.length?
+        await exportProject(config.db,project,registry,config.vault):null;
+      return {result,exports};
+    }finally{busy=false;}
+  };
+  const exportConfiguredProject=async()=>{
+    const {project,registry}=requireProject();
+    if(busy)throw new Error("Collector is busy");
+    busy=true;
+    try{return {exports:await exportProject(config.db,project,registry,config.vault)};}
+    finally{busy=false;}
   };
   const server=createServer(async(req,res)=>{
     try{
@@ -149,6 +197,62 @@ export function startServer(config:ServerOptions):ReturnType<typeof createServer
       if(req.method==="POST"&&url.pathname==="/export"){
         json(res,200,{export:config.vault?exportToVault(config.db,config.vault):null});return;
       }
+      if(req.method==="POST"&&url.pathname==="/project/sync"){
+        json(res,200,await collectProject());return;
+      }
+      if(req.method==="POST"&&url.pathname==="/project/reprocess"){
+        json(res,200,await reassessProject());return;
+      }
+      if(req.method==="POST"&&url.pathname==="/project/export"){
+        json(res,200,await exportConfiguredProject());return;
+      }
+      if(req.method==="POST"&&url.pathname==="/project/review"){
+        if(busy)throw new Error("Collector is busy");
+        const input=await body(req);
+        const projectId=String(input.projectId||""),key=String(input.key||""),
+          decision=String(input.decision||""),reason=input.reason;
+        if(!/^[a-z][a-z0-9_-]{1,63}$/.test(projectId)||!key||key.length>1000||
+          !["approved","rejected","pending"].includes(decision)||
+          typeof reason!=="string"||!reason.trim()||reason.length>1000){
+          json(res,400,{error:"Valid project, entity, decision and reason required"});return;
+        }
+        busy=true;
+        try{
+          const knowledge=new KnowledgeStore(config.db);
+          let reviewed:unknown;
+          try{
+            reviewed=knowledge.reviewEntity(projectId,key,
+              decision as "approved"|"rejected"|"pending",reason);
+          }finally{knowledge.close();}
+          json(res,200,{entity:reviewed});
+        }finally{busy=false;}
+        return;
+      }
+      if(req.method==="GET"&&url.pathname.startsWith("/project/")||req.method==="GET"&&url.pathname==="/projects"){
+        const knowledge=new KnowledgeStore(config.db);
+        try{
+          const projectId=url.searchParams.get("project")||configuredProject?.id||"legacy-x-feed";
+          if(!/^[a-z][a-z0-9_-]{1,63}$/.test(projectId)){
+            json(res,400,{error:"Invalid project id"});return;
+          }
+          if(url.pathname==="/projects"){
+            json(res,200,knowledge.listProjects());
+          }else if(url.pathname==="/project/entities"){
+            json(res,200,knowledge.listEntities(projectId,{
+              q:url.searchParams.get("q")||undefined,
+              type:url.searchParams.get("type")||undefined,
+              limit:Number(url.searchParams.get("limit")||50),
+              offset:Number(url.searchParams.get("offset")||0)
+            }));
+          }else if(url.pathname==="/project/runs"){
+            json(res,200,knowledge.runs(projectId,20));
+          }else if(url.pathname==="/project/observations"){
+            json(res,200,knowledge.listObservations(projectId,50));
+          }else json(res,404,{error:"Not found"});
+        }finally{knowledge.close();}
+        return;
+      }
+
       const store=new Store(config.db);
       try{
         if(req.method==="GET"&&url.pathname==="/diagnostics"){
@@ -162,6 +266,7 @@ export function startServer(config:ServerOptions):ReturnType<typeof createServer
             referencesPresent:Boolean(referencePath&&existsSync(referencePath)),
             collectorInput:source(),
             personalizedXFeedAvailable:false,
+            activeProjectId:configuredProject?.id||null,
             readyForManualImport:integrity==="ok",
             readyForScheduledDiscovery:integrity==="ok"&&Boolean(config.feed),
             nextStep:config.feed?"Verify the authorized source in /history":"Configure a permitted RSS URL or import observations manually"
@@ -175,7 +280,8 @@ export function startServer(config:ServerOptions):ReturnType<typeof createServer
           }
         }else if(req.method==="GET"&&url.pathname==="/status"){
           json(res,200,{...store.stats(),active:busy,paused,connectedSource:source(),
-            personalizedXFeed:"not_available",feedUrl:config.feed||null,autoEnrich:Boolean(config.autoEnrich)});
+            personalizedXFeed:"not_available",feedUrl:config.feed||null,
+            activeProjectId:configuredProject?.id||null,autoEnrich:Boolean(config.autoEnrich)});
         }else if(req.method==="GET"&&url.pathname==="/sources"){
           json(res,200,store.listSources(url.searchParams.get("status")||undefined,
             url.searchParams.get("q")||undefined,Number(url.searchParams.get("limit")||100),
@@ -214,8 +320,12 @@ export function startServer(config:ServerOptions):ReturnType<typeof createServer
   server.listen(config.port,"127.0.0.1");
   if(config.intervalMinutes>0){
     const timer=setInterval(()=>{
-      if(paused||busy||(!config.feed&&!config.fixture))return;
-      void collect().catch(()=>{/* Failure already recorded by the connector or pipeline. */});
+      if(paused||busy)return;
+      if(configuredProject){
+        void collectProject().catch(()=>{/* Per-source failure is recorded in kb_runs. */});
+      }else if(config.feed||config.fixture){
+        void collect().catch(()=>{/* Failure already recorded by the connector or pipeline. */});
+      }
     },Math.max(15,config.intervalMinutes)*60_000);
     timer.unref();server.on("close",()=>clearInterval(timer));
   }

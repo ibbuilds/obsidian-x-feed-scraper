@@ -1,0 +1,53 @@
+{
+  "id": "security-research",
+  "name": "Security Advisory Research",
+  "sources": [
+    {
+      "id": "shared-observations",
+      "adapter": "json-file",
+      "config": {
+        "path": "../shared/observations.json"
+      }
+    }
+  ],
+  "pipeline": [
+    "observation-entity"
+  ],
+  "evaluator": "keyword",
+  "policy": {
+    "includeKeywords": [
+      "security",
+      "advisory",
+      "cve"
+    ],
+    "excludeKeywords": [],
+    "minimumScore": 25
+  },
+  "outputs": [
+    {
+      "id": "json",
+      "adapter": "json",
+      "config": {}
+    }
+  ],
+  "entitySchemas": {
+    "security-advisory": {
+      "fields": {
+        "severity": "string"
+      },
+      "required": [
+        "severity"
+      ]
+    },
+    "community-post": {
+      "fields": {
+        "author": "string"
+      }
+    },
+    "research-note": {
+      "fields": {
+        "discipline": "string"
+      }
+    }
+  }
+}

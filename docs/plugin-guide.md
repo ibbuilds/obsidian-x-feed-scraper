@@ -1,44 +1,41 @@
-# Obsidian desktop guide
+# Discovery Engine in Obsidian Desktop
 
-## Prerequisites and installation
+## Install
 
-- Obsidian Desktop 1.9.2+ and Node.js 22.16+ are required. No cloud account, paid API or X authentication is necessary for supported connectors.
-- Download the successful GitHub Actions artifact named x-feed-scraper-obsidian from the CI workflow, then unpack the ZIP's three standard files (main.js, manifest.json, styles.css) into the vault plugin folder.
-- Enable Bases under Settings > Core plugins, then enable X Feed Scraper under Settings > Community plugins. Open the ribbon sidebar and allow the local collector to start.
-- If Node.js is not found when Obsidian starts from a graphical launcher, configure its absolute executable path in the settings.
-- The service binds only a random local port. Its temporary bearer token is never saved in the vault. The standard Obsidian three-file installer is supported: the `main.js` bundle contains versioned and SHA-256-verified collector code and a default profile, extracted to `~/.x-feed-scraper/<vault-hash>/` without reaching out to any download server.
+Requirements: Obsidian Desktop **1.9.2+** with the Bases core plugin enabled, and Node.js **22.16+** available to the desktop application.
 
-## Choosing a discovery source
+Download the latest verified `v0.5.0-beta.1` release ZIP. Copy its three standard files (`main.js`, `manifest.json` and `styles.css`) into `<vault>/.obsidian/plugins/x-feed-scraper/`. **Do not rename this directory**: the original plugin ID is preserved for existing users. Enable **Discovery Engine** in Community plugins.
 
-The UI supports public RSS/Atom feed URLs, user-provided post observations or a local JSON fixture (development/testing only). Configure only one scheduled feed or fixture, set a minimum 15-minute interval, save, and restart. When no source is configured the panel can still import observations and display previously saved sources.
+The plugin contains its own verified Node collector, stored outside the vault after first start. It binds an authenticated loopback port and stores its SQLite database in `~/.x-feed-scraper/<vault-hash>/library.db`. If Node cannot be found from a desktop launcher, use its absolute executable path in Settings.
 
-For a manual observation paste lines in the form:
-    https://x.com/example/status/123 | Open-source design system at https://example.org/components
+## Run any research project
 
-The post URL and text are **provided by the user**, not fetched from X. This is not the authenticated For You timeline.
+1. Create a JSON project manifest using `docs/projects.md` (or start from `examples/frontend/project.json`).
+2. Configure the source adapters allowed to access your chosen sources. Optional third-party extensions must be installed and approved manually.
+3. Enter the absolute manifest path under **Settings → Research project manifest**. For an external extension, enter its trusted absolute `.cjs` path.
+4. Choose a sync interval (0 means manual execution; 15 minutes minimum for scheduled projects). Restart collector.
+5. Open the Discovery Engine sidebar, click **Run research project**, and view entities, observation counts, scores and provenance. Approve/reject only the discoveries you personally verified.
+6. Use **Reevaluate stored data** after changing scoring criteria, without refetching the source. **Export project** writes the configured outputs.
 
-## Daily use
+The initial example reads a local synthetic JSON file. It is not a substitute for an authorized personalized X For You connector.
 
-1. Press Sync authorized source or import observations.
-2. Sources receive independent quality scores and evidence confidence. Low confidence is review-only and high score never means automatically approved.
-3. For opt-in automatic scoring, enable Automatically analyze public source metadata in Settings and restart; each permitted sync enriches up to 10 public pages with bounded retries. Alternatively press Check public metadata for an explicit manual run.
-4. Search/filter/page through candidates, inspect source descriptions, licenses and reasons, then Approve, Excellent or Reject with a required reason.
-5. Open the generated Sources.base in Obsidian and query the same Markdown candidates through an existing Obsidian MCP.
-6. Explicitly press Add to References.md on an approved source. This operation checks for duplicates, saves a unique snapshot backup in X Feed Scraper/Backups, and appends using Obsidian Vault.process.
+## Existing v0.4 workflow
 
-The main References.md is not edited during synchronization or note export. Generated notes can be refreshed automatically only if their recorded SHA-256 matches the existing file; any personal edits are preserved and reported as named conflicts.
+The earlier RSS and manual post ingestion, SQLite source library, visual-only items, manual recommendations and guarded References.md behavior remain available in the labeled **X Feed Scraper (legacy curation)** section. Their scores and categories are distinct from the new generic project database.
 
-## On-device validation checklist
+## Owner-device acceptance checklist
 
-- [ ] The panel and settings render without console errors.
-- [ ] The correct installed Node version is used and the packaged collector starts.
-- [ ] Reopening Obsidian does not create duplicate collectors.
-- [ ] The approved RSS source can be read in accordance with its terms.
-- [ ] Manual import, SQLite persistence and incremental deduplication work after restart.
-- [ ] Sources.base correctly displays typed YAML categories/status/quality.
-- [ ] Approve and Reject produce expected note states without deleting manual edits.
-- [ ] References.md insertion creates a backup and never drops existing records.
-- [ ] The existing Obsidian MCP can find and read exported notes.
-- [ ] Windows/macOS file permissions and paths are verified if relevant.
+- [ ] The standard three-file plugin launches and **Diagnostics** reports SQLite integrity and a running collector.
+- [ ] A frontend or custom project can be configured and executed without editing engine source code.
+- [ ] A second project with another schema can be processed in the same database and produces isolated results.
+- [ ] Obsidian Bases shows structured notes in the project-specific folder.
+- [ ] SQLite survives restarting Obsidian; a second sync respects the source cursor and deduplication.
+- [ ] Approval/rejection and re-evaluation preserve human review history.
+- [ ] Manually editing a generated note produces a conflict rather than silent overwriting.
+- [ ] The old References.md and legacy notes remain intact.
+- [ ] The user's existing Obsidian MCP can find new project notes in the actual vault.
+- [ ] If an external extension is used, its exact code and permissions are reviewed.
 
-CI already exercises the genuine Obsidian Desktop app in an isolated Linux vault. This checklist still requires validation on the owner's actual device, vault, Obsidian version and connected MCP.
+CI executes the generic engine and the real Obsidian Desktop flow in an isolated Linux test vault, plus cross-platform Node tests. It cannot replace this owner's device and connected MCP checks.
+
+The real personalized X "For You" feed is NOT a supported connector, and no authenticated session extraction is performed.

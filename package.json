@@ -1,9 +1,9 @@
 {
-  "name": "x-feed-scraper",
-  "version": "0.4.0",
+  "name": "discovery-engine",
+  "version": "0.5.0",
   "private": true,
   "type": "module",
-  "description": "Local-first source discovery and curation for Obsidian",
+  "description": "Extensible local knowledge ingestion, research and curation engine",
   "engines": {
     "node": ">=22.16.0"
   },
@@ -16,7 +16,7 @@
     "serve": "node --experimental-strip-types apps/collector/cli.ts serve",
     "test": "node --experimental-strip-types --test tests/*.test.ts",
     "check": "tsc --noEmit",
-    "build": "npm run build -w @x-feed/obsidian-plugin",
+    "build": "npm run build -w @discovery-engine/obsidian-plugin",
     "package": "npm run build && node apps/obsidian-plugin/package.mjs"
   },
   "dependencies": {

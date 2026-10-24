@@ -83,4 +83,42 @@ describe("X Feed Scraper in actual Obsidian Desktop",function(){
     expect(result.files.some(path=>path.startsWith("X Feed Scraper/Backups/References-"))).toBe(true);
   });
 
+  it("runs a completely generic non-X research project from the Obsidian sidebar",async()=>{
+    const previous=await browser.executeObsidian(async({app,obsidian})=>{
+      const f=app.vault.getAbstractFileByPath("References.md");
+      if(!(f instanceof obsidian.TFile))throw Error("Missing References.md");
+      return await app.vault.read(f);
+    });
+    const activated=await browser.executeObsidian(async({app})=>{
+      const instance=(app as unknown as {plugins:{plugins:Record<string,{
+        settings:{projectManifestPath:string;intervalMinutes:number};
+        saveSettings:()=>Promise<void>;restart:()=>Promise<void>;
+        bridge:{running:boolean;lastError:string}
+      }>}}).plugins.plugins["x-feed-scraper"];
+      if(!instance)throw Error("Plugin missing");
+      const base=(app.vault.adapter as {getBasePath:()=>string}).getBasePath();
+      instance.settings.projectManifestPath=base+"/project-manifest.json";
+      instance.settings.intervalMinutes=0;
+      await instance.saveSettings();
+      await instance.restart();
+      return {running:instance.bridge.running,error:instance.bridge.lastError};
+    });
+    expect(activated.running).toBe(true);
+    const run=browser.$("//button[normalize-space()='Run research project']");
+    await run.waitForDisplayed({timeout:30000});
+    await run.click();
+    await browser.waitUntil(async()=>
+      (await browser.$(".xfs-panel").getText()).includes("Independent research record"),{
+      timeout:30000,timeoutMsg:"Generic project record missing from Obsidian"
+    });
+    const state=await browser.executeObsidian(async({app,obsidian})=>{
+      const f=app.vault.getAbstractFileByPath("References.md");
+      if(!(f instanceof obsidian.TFile))throw Error("Missing References.md");
+      return {references:await app.vault.read(f),
+        files:app.vault.getMarkdownFiles().map(item=>item.path)};
+    });
+    expect(state.references).toBe(previous);
+    expect(state.files.some(path=>path.startsWith("Discovery Engine/desktop-generic/"))).toBe(true);
+  });
+
 });

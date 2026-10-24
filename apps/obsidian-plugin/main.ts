@@ -15,6 +15,7 @@ interface SettingsData {
   nodeExecutable:string;autoStart:boolean;feedUrl:string;fixturePath:string;
   profilePath:string;intervalMinutes:number;scoreThreshold:number;
   confidenceThreshold:number;preferFree:boolean;autoEnrich:boolean;
+  projectManifestPath:string;extensionPath:string;
 }
 interface Source {
   id:number;url:string;title:string;description?:string;license?:string;
@@ -27,15 +28,24 @@ interface Stats {
   needs_review:number;approved:number;errors:number;
   active:boolean;paused:boolean;connectedSource:string;
   personalizedXFeed:string;feedUrl?:string|null;autoEnrich?:boolean;
+  activeProjectId?:string|null;
   lastRun?:{started_at:string;ended_at:string;status:string;posts_seen:number;duplicates:number};
 }
 interface Recommendations {
   posts:Array<{post_url:string;author:string;username:string;score:number;categories:string}>;
   authors:Array<{author:string;username:string;posts_seen:number;quality_sources:number}>;
 }
+interface KnowledgeRecord {
+  projectId:string;key:string;type:string;title:string;url?:string;
+  category:string;score:number;confidence:number;reasons:string[];
+  review:"pending"|"approved"|"rejected";observationCount:number;
+  attributes:Record<string,unknown>;
+}
+interface KnowledgeProject {id:string;name:string;entities:number;observations:number}
 const DEFAULT:SettingsData={
   nodeExecutable:"node",autoStart:true,feedUrl:"",fixturePath:"",profilePath:"",
-  intervalMinutes:60,scoreThreshold:75,confidenceThreshold:0.65,preferFree:true,autoEnrich:false
+  intervalMinutes:60,scoreThreshold:75,confidenceThreshold:0.65,preferFree:true,autoEnrich:false,
+  projectManifestPath:"",extensionPath:""
 };
 function asError(error:unknown):string {
   return error instanceof Error?error.message:String(error);
@@ -93,6 +103,29 @@ class ReviewModal extends Modal {
     }));
   }
 }
+class KnowledgeReviewModal extends Modal {
+  constructor(plugin:ScraperPlugin,projectId:string,entity:KnowledgeRecord,
+    decision:"approved"|"rejected"|"pending",done:()=>void){
+    super(plugin.app);
+    this.titleEl.setText("Review "+entity.title);
+    this.contentEl.createEl("p",{text:"This updates the project-specific decision. "+
+      "References.md is never appended automatically."});
+    const field=this.contentEl.createEl("textarea",{attr:{
+      rows:"3",placeholder:"Reason for this decision (required)",style:"width:100%"
+    }});
+    new Setting(this.contentEl).addButton(b=>b.setButtonText(decision).setCta().onClick(async()=>{
+      if(!field.value.trim()){new Notice("A review reason is required");return;}
+      try{
+        await plugin.call("/project/review","POST",{
+          projectId,key:entity.key,decision,reason:field.value.trim()
+        });
+        const exported=await plugin.call("/project/export","POST");
+        plugin.notifyExport(exported);
+        this.close();done();
+      }catch(error){new Notice(asError(error));}
+    }));
+  }
+}
 class ImportModal extends Modal {
   constructor(plugin:ScraperPlugin,done:()=>void){
     super(plugin.app);
@@ -134,20 +167,18 @@ class SourceView extends ItemView {
   private query="";
   private status="";
   private page=0;
+  private projectQuery="";
+  private projectPage=0;
   constructor(leaf:WorkspaceLeaf,private plugin:ScraperPlugin){super(leaf);}
   getViewType():string{return VIEW;}
-  getDisplayText():string{return "X Feed Scraper";}
+  getDisplayText():string{return "Discovery Engine";}
   getIcon():string{return "book-open-check";}
   async onOpen():Promise<void>{await this.draw();}
   async onClose():Promise<void>{}
   async draw():Promise<void>{
     const root=this.contentEl;
     root.empty();root.addClass("xfs-panel");
-    root.createEl("h3",{text:"X Feed Scraper"});
-    const warning=root.createDiv({cls:"xfs-warning"});
-    warning.createEl("strong",{text:"X For You: not connected."});
-    warning.createEl("p",{text:"The personalized X feed has no verified authorized connector. "+
-      "RSS and manual imports are separately identified sources, never presented as For You."});
+    root.createEl("h3",{text:"Discovery Engine"});
     if(!this.plugin.bridge.running){
       root.createEl("p",{text:this.plugin.bridge.lastError||
         "The local collector is not running. Node.js 22.16+ and the complete plugin ZIP are required."});
@@ -176,6 +207,70 @@ class SourceView extends ItemView {
         stats.active?"Synchronization running":"Collector active; service bound to localhost only"});
       if(stats.lastRun)root.createEl("p",{cls:"xfs-meta",text:"Last run: "+
         (stats.lastRun.ended_at||stats.lastRun.started_at)+" ("+stats.lastRun.status+")"});
+      const generic=root.createDiv({cls:"xfs-projects"});
+      generic.createEl("h4",{text:"Knowledge projects"});
+      const active=stats.activeProjectId;
+      const projects=await this.plugin.call("/projects") as KnowledgeProject[];
+      for(const item of projects.slice(0,20)){
+        generic.createEl("p",{cls:"xfs-meta",text:item.name+" · "+
+          item.entities+" entities · "+item.observations+" observations"+
+          (item.id===active?" · active":" · stored")});
+      }
+      if(active){
+        const projectActions=generic.createDiv({cls:"xfs-actions"});
+        button(projectActions,"Run research project",()=>{void this.projectAction("/project/sync");});
+        button(projectActions,"Reevaluate stored data",()=>{void this.projectAction("/project/reprocess");});
+        button(projectActions,"Export project",()=>{void this.projectAction("/project/export");});
+        const controls=generic.createDiv({cls:"xfs-controls"});
+        const search=controls.createEl("input",{attr:{placeholder:"Search project knowledge"}});
+        search.value=this.projectQuery;
+        button(controls,"Search",()=>{
+          this.projectQuery=search.value.trim().slice(0,100);
+          this.projectPage=0;void this.draw();
+        });
+        const query="/project/entities?project="+encodeURIComponent(active)+
+          "&limit=40&offset="+(this.projectPage*40)+
+          (this.projectQuery?"&q="+encodeURIComponent(this.projectQuery):"");
+        const records=await this.plugin.call(query) as KnowledgeRecord[];
+        const pager=controls.createDiv({cls:"xfs-actions"});
+        button(pager,"Previous",()=>{
+          this.projectPage=Math.max(0,this.projectPage-1);void this.draw();
+        }).disabled=this.projectPage===0;
+        pager.createSpan({text:"Page "+(this.projectPage+1)});
+        button(pager,"Next",()=>{this.projectPage++;void this.draw();}).disabled=records.length<40;
+        if(!records.length)generic.createEl("p",{cls:"xfs-muted",
+          text:"No records yet. Run the configured project to collect its sources."});
+        for(const record of records){
+          const card=generic.createDiv({cls:"xfs-card"});
+          card.createEl("h5",{text:record.title||record.key});
+          card.createEl("p",{cls:"xfs-meta",
+            text:record.type+" · "+record.category+" · "+record.review+" · "+
+              record.score+"/100 · confidence "+Math.round(record.confidence*100)+
+              "% · "+record.observationCount+" observations"});
+          if(record.url)external(card,"Open resource",record.url);
+          card.createEl("p",{text:record.reasons.join(" · ")});
+          const details=card.createEl("details");
+          details.createEl("summary",{text:"Structured attributes"});
+          details.createEl("p",{text:JSON.stringify(record.attributes).slice(0,1600)});
+          const choices=card.createDiv({cls:"xfs-actions"});
+          for(const [decision,label] of [
+            ["approved","Approve"],["rejected","Reject"],["pending","Reopen"]
+          ] as Array<["approved"|"rejected"|"pending",string]>){
+            if(decision===record.review)continue;
+            button(choices,label,()=>new KnowledgeReviewModal(
+              this.plugin,active,record,decision,()=>{void this.draw();}
+            ).open());
+          }
+        }
+      }else{
+        generic.createEl("p",{cls:"xfs-muted",text:
+          "Choose a research project manifest under Settings, or use the independent project CLI."});
+      }
+      generic.createEl("h4",{text:"X Feed Scraper (legacy curation)"});
+      const warning=root.createDiv({cls:"xfs-warning"});
+      warning.createEl("strong",{text:"X For You: not connected."});
+      warning.createEl("p",{text:"The authenticated personalized X For You feed has no verified authorized adapter. "+
+        "Legacy RSS and manual imports are separate sources, never labeled as your For You timeline."});
       const actions=root.createDiv({cls:"xfs-actions"});
       button(actions,"Refresh",()=>{void this.draw();});
       button(actions,"Diagnostics",()=>{
@@ -296,6 +391,18 @@ class SourceView extends ItemView {
       button(root,"Restart local engine",()=>{void this.plugin.restart().then(()=>this.draw()).catch(e=>new Notice(asError(e)));});
     }
   }
+  private async projectAction(path:string):Promise<void>{
+    try{
+      const raw=await this.plugin.call(path,"POST");
+      this.plugin.notifyExport(raw);
+      const run=(raw as {result?:{success?:boolean;runs?:Array<{error?:string}>}}).result;
+      if(run?.success===false){
+        const errors=(run.runs||[]).map(item=>item.error).filter(Boolean);
+        new Notice("Some project sources failed: "+errors.slice(0,2).join("; "),10000);
+      }
+      await this.draw();
+    }catch(error){new Notice(asError(error));}
+  }
   private async action(path:string):Promise<void>{
     try{
       const response=await this.plugin.call(path,"POST");
@@ -309,9 +416,9 @@ class ScraperSettings extends PluginSettingTab {
   constructor(private plugin:ScraperPlugin){super(plugin.app,plugin);}
   display():void{
     const root=this.containerEl;root.empty();
-    root.createEl("h3",{text:"X Feed Scraper"});
-    root.createEl("p",{text:"Obsidian launches the included local collector. X For You remains unavailable. "+
-      "RSS is an independent permitted source; leave it blank to import observations manually."});
+    root.createEl("h3",{text:"Discovery Engine"});
+    root.createEl("p",{text:"Configure any research project manifest to activate source adapters and processing pipelines. "+
+      "The previous RSS/manual workflow remains available, and personalized X For You requires an authorized connector."});
     new Setting(root).setName("Launch collector on startup")
       .addToggle(t=>t.setValue(this.plugin.settings.autoStart).onChange(async value=>{
         this.plugin.settings.autoStart=value;await this.plugin.saveSettings();
@@ -321,6 +428,20 @@ class ScraperSettings extends PluginSettingTab {
       .addText(t=>t.setValue(this.plugin.settings.nodeExecutable).onChange(async value=>{
         this.plugin.settings.nodeExecutable=value.trim()||"node";await this.plugin.saveSettings();
       }));
+    new Setting(root).setName("Research project manifest")
+      .setDesc("Absolute path to a project JSON file. The generic engine uses its own sources, "+
+        "processors, evaluator and outputs; no X or Obsidian dependency is required.")
+      .addText(t=>t.setPlaceholder("/path/to/project.json")
+        .setValue(this.plugin.settings.projectManifestPath).onChange(async value=>{
+          this.plugin.settings.projectManifestPath=value.trim();await this.plugin.saveSettings();
+        }));
+    new Setting(root).setName("Trusted local extension (.cjs)")
+      .setDesc("Optional absolute path. Extensions run JavaScript with your OS permissions. "+
+        "Only load code you audited and trust; no automatic downloads.")
+      .addText(t=>t.setPlaceholder("/path/to/extension.cjs")
+        .setValue(this.plugin.settings.extensionPath).onChange(async value=>{
+          this.plugin.settings.extensionPath=value.trim();await this.plugin.saveSettings();
+        }));
     new Setting(root).setName("Authorized RSS/Atom URL")
       .setDesc("Public HTTP(S) feeds only. Do not use account/session tokens here. Not an X feed.")
       .addText(t=>t.setValue(this.plugin.settings.feedUrl).onChange(async value=>{
@@ -399,8 +520,8 @@ export default class ScraperPlugin extends Plugin {
       }
     }
     this.registerView(VIEW,leaf=>new SourceView(leaf,this));
-    this.addRibbonIcon("book-open-check","Open X Feed Scraper",()=>{void this.activate();});
-    this.addCommand({id:"open-candidates",name:"Open curated sources",callback:()=>{void this.activate();}});
+    this.addRibbonIcon("book-open-check","Open Discovery Engine",()=>{void this.activate();});
+    this.addCommand({id:"open-candidates",name:"Open Discovery Engine",callback:()=>{void this.activate();}});
     this.addCommand({id:"sync-authorized-source",name:"Sync authorized source",callback:()=>{
       void this.call("/sync","POST").then(()=>this.redraw()).catch(e=>new Notice(asError(e)));
     }});
@@ -413,16 +534,22 @@ export default class ScraperPlugin extends Plugin {
   }
   notifyExport(raw:unknown):void{
     if(!raw||typeof raw!=="object")return;
-    const result=(raw as {export?:unknown}).export;
-    if(!result||typeof result!=="object")return;
-    const x=result as {created?:number;updated?:number;removed?:number;conflicts?:number;conflictPaths?:string[]};
-    const summary="Notes: "+(x.created||0)+" created, "+(x.updated||0)+" updated, "+
-      (x.removed||0)+" retired";
-    if(x.conflicts){
-      const paths=(x.conflictPaths||[]).slice(0,3).join("; ");
-      new Notice(summary+". "+x.conflicts+" edit conflicts preserved. "+paths,12000);
-    }else if((x.created||0)+(x.updated||0)+(x.removed||0)>0){
-      new Notice(summary,5500);
+    const response=raw as {export?:unknown;exports?:unknown};
+    const source=response.exports;
+    const results=Array.isArray(source)?
+      source.map(entry=>(entry as {result?:unknown}).result):
+      [response.export];
+    for(const item of results){
+      if(!item||typeof item!=="object")continue;
+      const data=item as {created?:number;updated?:number;removed?:number;
+        conflicts?:number;conflictPaths?:string[]};
+      const summary="Notes: "+(data.created||0)+" created, "+(data.updated||0)+" updated";
+      if(data.conflicts){
+        new Notice(summary+"; "+data.conflicts+" edits preserved. "+
+          (data.conflictPaths||[]).slice(0,3).join("; "),12000);
+      }else if((data.created||0)+(data.updated||0)+(data.removed||0)>0){
+        new Notice(summary,5500);
+      }
     }
   }
   async saveSettings():Promise<void>{await this.saveData(this.settings);}
@@ -459,7 +586,9 @@ export default class ScraperPlugin extends Plugin {
       threshold:this.settings.scoreThreshold,
       confidence:this.settings.confidenceThreshold,
       preferFree:this.settings.preferFree,
-      autoEnrich:this.settings.autoEnrich
+      autoEnrich:this.settings.autoEnrich,
+      projectPath:this.settings.projectManifestPath||undefined,
+      extensionPath:this.settings.extensionPath||undefined
     });
   }
   async restart():Promise<void>{

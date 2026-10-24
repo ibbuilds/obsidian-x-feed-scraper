@@ -1,28 +1,43 @@
-# Obsidian-first architecture
+# Discovery Engine architecture
 
-Obsidian desktop UI -> bundled LocalBridge Node child process -> authenticated loopback API -> authorized connector -> posts -> SQLite -> normalized linked resources -> evidence-based scoring -> Markdown and native Bases -> human review -> optional References.md insertion.
+## Invariant: the engine is independent of sources, domains and outputs
 
-The collector can run independently with the CLI when Obsidian is closed. The Obsidian UI is the normal application entrypoint. The standard `main.js` embeds the Node collector and default profile, verifies SHA-256 integrity, materializes versioned local files outside the vault, then launches the collector with a temporary bearer token.
+`apps/collector/` (CLI and local API) and `apps/obsidian-plugin/` are integration layers. `packages/sdk/contracts.ts` describes replaceable source, processor, evaluator and output interfaces. `packages/core/engine.ts` owns pipeline execution, paging and validation. `packages/storage/knowledge.ts` owns generic SQLite persistence and in-place legacy import.
 
-## Persistence and relationships
+    SourceAdapter → Observation[] → Processor[] → EntityDraft[]
+                                                ↓
+                                   Evaluator → Assessment
+                                                ↓
+          SQLite: observation / entity / mention / evidence / review
+                                                ↓
+                                  OutputAdapter (JSON, Obsidian, ...)
 
-SQLite records posts (connector ID, original permalink, author, text, observed times), sources (unique normalized URL and quality fields), many-to-many post/source relations, every observed run, checkpoints, errors, reviews and stored pause state. The plugin uses a database under ~/.x-feed-scraper/<vault-hash>/library.db to avoid vault sync conflicts. The standalone CLI database path is separately configurable. A shared process lock serializes ingestion, public enrichment, export and manual reviews.
+Source IDs and cursors belong to project-specific connections. Entity identity and reviews are scoped to project ID. One raw observation may cite several entities; repeated observations may cite the same entity. No URL is necessary for a non-web entity.
 
-The vault stores only important candidate and approved notes with typed YAML, a Sources.base file and short run reports. References.md remains the existing primary curated library and is never overwritten by the pipeline.
+## Generic SQLite schema
 
-## Connectors and limitations
+- `kb_projects` and `kb_connections`: project and adapter identifiers, config fingerprints **not raw credentials**.
+- `kb_observations`: source payload identifiers, observed text, typed attributes and timestamps.
+- `kb_entities`: unique entities and machine-readable attributes.
+- `kb_mentions`: many-to-many provenance with evidence JSON.
+- `kb_assessments`: score, confidence, category, reasons and evaluator ID.
+- `kb_reviews`: independent, append-only human decisions; never implicitly auto-approved.
+- `kb_checkpoints` and `kb_runs`: per-source cursors, attempts, outcome and error reporting.
 
-- Fixture: synthetic tests with no X access.
-- Manual: observations explicitly pasted/imported by the user, including any user-provided X post URLs.
-- RSS/Atom: user-authorized public feeds, configurable interval and incremental deduplication.
-- Personalized X For You: no authorized, verified connector exists in this release.
+The original v0.4 tables remain intact and are imported additively into project `legacy-x-feed`. Migration is idempotent and does not rewrite old vault files.
 
-The core keeps connector-specific logic separate from domain models, scoring and persistence. The initial profile is design; profiles may use other categories.
+## Failure boundaries
 
-## Quality
+All pages are schema-checked before writing. Each source page, its resulting entities/mentions and its next cursor are committed as **one SQLite transaction**. A failed page never advances its cursor. Processing runs are recorded with success/failure, and separate project sources can continue independently.
 
-Rules use relevance, public page evidence, explicit licensing and access facts. Score is 0–100; confidence is an independent evidence metric. A high score does not establish aesthetic quality and never auto-approves candidates. Reviews record user decisions, and a bounded category-specific preference adjustment helps prioritize future discoveries.
+A process-level database lock serializes collectors and output writes. External adapters may perform network requests while that lock is held; a long request can delay manual review, and timeouts should be enforced by the adapter.
 
-## File safety
+Offline `project reprocess` reevaluates existing stored observations without calling source adapters. Entity scores may change, but manual approvals/rejections stay in their own audit table.
 
-The exporter fingerprints each generated note in SQLite. If the on-disk file still matches the last generated bytes it can safely update its score/metadata and retire stale machine-generated candidates after approval or primary-library insertion. Unknown or manually modified files remain untouched and appear in explicit conflict results. References.md writes require explicit action, a timestamped backup and re-validation in Obsidian's atomic Vault.process callback.
+## Output and safety
+
+The built-in Obsidian output writes project-specific typed Markdown and a Base under `Discovery Engine/<project-id>/`. Generated files are fingerprinted: only unchanged machine output can be refreshed. Modified or unknown files are preserved and appear as conflicts. The generic pipeline never appends to the existing root `References.md`.
+
+SQLite remains outside Obsidian vault sync by default. The plugin uses an embedded verified collector process and an authenticated 127.0.0.1 service. The CLI works without Obsidian.
+
+The personalized X For You feed remains a **missing, separately tracked authorized adapter**. The generic engine neither implements undocumented X APIs nor claims generic RSS is an equivalent.

@@ -1,14 +1,9 @@
-# Research profiles
+# Project policies and legacy research profiles
 
-Profiles are JSON configurations like profiles/design.json. The core does not hardcode
-design-specific criteria. Set categories (each name and keyword strings), excludeDomains,
-scoreThreshold (0–100), confidenceThreshold (0–1), and preferFree. Supply
---profile ./profiles/your-profile.json to use another research area.
+For new projects, use a manifest with `policy.includeKeywords`, `policy.excludeKeywords`, `policy.minimumScore`, `pipeline`, `evaluator` and optional `entitySchemas`. This allows an arbitrary research domain and typed entity attributes without hardcoding frontend or X behavior.
 
-Scores are heuristic. Positive signals come from topic relevance, public title,
-substantial description, HTML evidence, verified free/open-source access and licensing.
-Confidence is an independent coverage measure; poor evidence routes sources to needs_review.
-Neither a GitHub link nor a textual claim establishes an open-source license.
+See `docs/projects.md` for schema examples, reprocessing and output selection. Custom evaluators can use any verified signals they can access while conforming to the SDK and preserving human decision state.
 
-Use review --decision approved, rejected or excellent --reason ... to record preferences.
-Metadata enrichment can be manually invoked or enabled for automatic permitted syncs. Automatic failures use persistent backoff and a three-attempt cap; the manual action can retry when needed. Prior decisions provide a bounded category-specific score adjustment. It does not train a model or alter anyone's X account.
+The original `profiles/design.json` is retained for the **legacy X Feed Scraper source-scoring flow** only. It specifies categories, excluded domains, score/confidence thresholds and free/open-source preferences. Legacy approved and rejected sources are never silently reapproved by the generic system.
+
+Automated scores indicate heuristic relevance and evidence coverage, not proven visual quality or accessibility. Source access/license classifications require actual evidence or a manual check.

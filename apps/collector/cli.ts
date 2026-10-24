@@ -9,6 +9,7 @@ import {ingest,enrich,referencesFromFile} from "../../packages/core/pipeline.ts"
 import {exportToVault} from "../../packages/core/obsidian.ts";
 import {Store} from "../../packages/storage/store.ts";
 import {startServer} from "./server.ts";
+import {projectCommand} from "./project-cli.ts";
 
 const args=process.argv.slice(2);
 function option(name:string):string|undefined {
@@ -23,10 +24,12 @@ function required(name:string):string {
 }
 function show(value:unknown):void {console.log(JSON.stringify(value,null,2));}
 const HELP=[
-  "Obsidian X Feed Scraper — local discovery engine (Node 22.16+)",
+  "Discovery Engine — extensible local knowledge processing (Node 22.16+)",
+  "  project help  # generic projects, adapters, processors, JSON and Obsidian exports",
   "  sync --feed https://example.org/feed.xml [--vault /vault]",
   "  sync --fixture tests/fixtures/posts.json     [demo only]",
   "  serve --feed https://example.org/feed.xml --interval 60 --port 0",
+  "  serve --project examples/frontend/project.json --interval 60 --port 0",
   "  sources [--status needs_review] [--search motion] | posts | status | history",
   "  enrich --limit 10 | export --vault /vault | recommendations | report",
   "  review --id 1 --decision approved --reason 'Useful source'",
@@ -36,6 +39,7 @@ const HELP=[
 async function main():Promise<void>{
   const command=args[0]||"help";
   if(["help","--help","-h"].includes(command)){console.log(HELP);return;}
+  if(command==="project"){await projectCommand(args);return;}
   const db=resolve(option("db")||process.env.XFS_DB||"./data/x-feed.db");
   const vault=option("vault")||process.env.XFS_VAULT;
   const refsPath=option("references")||
@@ -73,7 +77,8 @@ async function main():Promise<void>{
     const port=Number(option("port")??47321),intervalMinutes=Number(option("interval")??0);
     const server=startServer({db,profile,feed,fixture,vault,references:refsPath,
       token:process.env.XFS_API_TOKEN||"",port,intervalMinutes,
-      autoEnrich:option("auto-enrich")==="true"});
+      autoEnrich:option("auto-enrich")==="true",
+      projectPath:option("project"),extensionPath:option("extension")});
     server.on("listening",()=>{
       const address=server.address();
       const actual=address&&typeof address!=="string"?address.port:port;
