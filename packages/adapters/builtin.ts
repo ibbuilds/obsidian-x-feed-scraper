@@ -4,6 +4,8 @@ import {fetchRSS} from "../connectors/rss.ts";
 import type {Extension,Observation,SourceAdapter} from "../sdk/contracts.ts";
 import {validateObservation} from "../core/project-config.ts";
 import {mcpStdioSource} from "./mcp-stdio.ts";
+import {jsonSnapshotSource,publicJsonSource} from "./snapshots.ts";
+import {publicProductSource} from "./product-jsonld.ts";
 import {normalizeUrl} from "../core/url.ts";
 
 function path(config:Record<string,unknown>):string{
@@ -50,4 +52,5 @@ const rss:SourceAdapter={
     return {observations,nextCursor:hasMore?String(next):undefined,hasMore};
   }
 };
-export const builtinSources:Extension={apiVersion:1,adapters:[jsonFile,rss,mcpStdioSource]};
+export const builtinSources:Extension={apiVersion:1,
+  adapters:[jsonFile,jsonSnapshotSource,rss,publicJsonSource,publicProductSource,mcpStdioSource]};
