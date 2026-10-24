@@ -45,12 +45,27 @@ function validatePosts(raw:unknown):Post[]{
       }
     }
     normalizeUrl(p.url as string);
-    const urls=Array.isArray(p.urls)?p.urls:[];
-    if(urls.length>30||urls.some(y=>typeof y!=="string"||y.length>3000)) throw new Error("Invalid URLs");
+    const validLinks=(key:"urls"|"quotedUrls"|"images"):string[]=>{
+      if(p[key]===undefined)return [];
+      const links=p[key];
+      if(!Array.isArray(links)||links.length>30||
+        links.some(value=>typeof value!=="string"||value.length>3000)){
+        throw new Error("Invalid "+key);
+      }
+      return links as string[];
+    };
+    if(p.quotedText!==undefined&&(typeof p.quotedText!=="string"||p.quotedText.length>12000)){
+      throw new Error("Invalid quoted text");
+    }
+    const publishedAt=typeof p.publishedAt==="string"&&Number.isFinite(Date.parse(p.publishedAt))?
+      new Date(p.publishedAt).toISOString():undefined;
     return {
       id:p.id as string,url:p.url as string,author:p.author as string,
-      username:p.username as string,text:p.text as string,urls:urls as string[],
-      publishedAt:typeof p.publishedAt==="string"?p.publishedAt:undefined
+      username:p.username as string,text:p.text as string,
+      urls:validLinks("urls"),quotedUrls:validLinks("quotedUrls"),
+      images:validLinks("images"),
+      quotedText:typeof p.quotedText==="string"?p.quotedText:undefined,
+      publishedAt
     };
   });
 }
