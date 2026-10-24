@@ -84,7 +84,9 @@ class ReviewModal extends Modal {
     new Setting(this.contentEl).addButton(b=>b.setButtonText("Save review").setCta().onClick(async()=>{
       if(!field.value.trim()){new Notice("A reason is required");return;}
       try{
-        await plugin.call("/review","POST",{id:source.id,decision,reason:field.value.trim(),access:selectedAccess});
+        const response=await plugin.call("/review","POST",{id:source.id,decision,
+          reason:field.value.trim(),access:selectedAccess});
+        plugin.notifyExport(response);
         this.close();done();new Notice("Decision stored locally");
       }catch(e){new Notice(asError(e));}
     }));
@@ -119,7 +121,8 @@ class ImportModal extends Modal {
               text:bar>=0?line.slice(bar+3).trim():source};
           });
         }
-        await plugin.call("/import","POST",{posts});
+        const response=await plugin.call("/import","POST",{posts});
+        plugin.notifyExport(response);
         new Notice("Observations imported into SQLite");
         this.close();done();
       }catch(e){new Notice("Invalid import: "+asError(e));}
@@ -191,7 +194,9 @@ class SourceView extends ItemView {
       button(actions,"Check public metadata",()=>new ConfirmAction(this.plugin,
         "Fetch public metadata?","This makes network requests to up to 10 discovered public websites. "+
         "No authenticated X content is retrieved.","Fetch metadata",async()=>{
-          await this.plugin.call("/enrich","POST",{limit:10});await this.draw();
+          const response=await this.plugin.call("/enrich","POST",{limit:10});
+          this.plugin.notifyExport(response);
+          await this.draw();
         }).open());
       button(actions,"Export notes",()=>{void this.action("/export");});
       button(actions,"Open Bases",()=>{
@@ -284,7 +289,11 @@ class SourceView extends ItemView {
     }
   }
   private async action(path:string):Promise<void>{
-    try{await this.plugin.call(path,"POST");await this.draw();}
+    try{
+      const response=await this.plugin.call(path,"POST");
+      this.plugin.notifyExport(response);
+      await this.draw();
+    }
     catch(e){new Notice(asError(e));}
   }
 }
@@ -377,6 +386,20 @@ export default class ScraperPlugin extends Plugin {
   async onunload():Promise<void>{
     await this.bridge.stop();
     this.app.workspace.detachLeavesOfType(VIEW);
+  }
+  notifyExport(raw:unknown):void{
+    if(!raw||typeof raw!=="object")return;
+    const result=(raw as {export?:unknown}).export;
+    if(!result||typeof result!=="object")return;
+    const x=result as {created?:number;updated?:number;removed?:number;conflicts?:number;conflictPaths?:string[]};
+    const summary="Notes: "+(x.created||0)+" created, "+(x.updated||0)+" updated, "+
+      (x.removed||0)+" retired";
+    if(x.conflicts){
+      const paths=(x.conflictPaths||[]).slice(0,3).join("; ");
+      new Notice(summary+". "+x.conflicts+" edit conflicts preserved. "+paths,12000);
+    }else if((x.created||0)+(x.updated||0)+(x.removed||0)>0){
+      new Notice(summary,5500);
+    }
   }
   async saveSettings():Promise<void>{await this.saveData(this.settings);}
   private paths():{dir:string;vault:string}{
