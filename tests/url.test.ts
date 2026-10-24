@@ -32,3 +32,10 @@ test("shortened t.co links remain explicit unresolved candidates",()=>{
   const urls=extractUrls({...post,text:"Worth reading https://t.co/aBcDe"});
   assert.deepEqual(urls,["https://t.co/aBcDe"]);
 });
+
+test("credential-like URL parameters cannot enter normalized sources",()=>{
+  for(const query of ["token=my-secret","api_key=abc","session=xyz","Authorization=Bearer123","client_secret=oops","jwt=header.payload.sig"]){
+    assert.throws(()=>normalizeUrl("https://example.org/resource?"+query),/credential-like/);
+  }
+  assert.equal(normalizeUrl("https://example.org/resource?utm_source=x&id=7"),"https://example.org/resource?id=7");
+});

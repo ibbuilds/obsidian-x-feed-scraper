@@ -13,7 +13,7 @@ import {existsSync} from "node:fs";
 
 export interface ServerOptions {
   db:string;profile:Profile;fixture?:string;feed?:string;vault?:string;references?:string;
-  token:string;port:number;intervalMinutes:number;
+  token:string;port:number;intervalMinutes:number;autoEnrich?:boolean;
 }
 function json(res:ServerResponse,code:number,value:unknown):void {
   res.writeHead(code,{"content-type":"application/json; charset=utf-8","cache-control":"no-store",
@@ -45,12 +45,27 @@ function validatePosts(raw:unknown):Post[]{
       }
     }
     normalizeUrl(p.url as string);
-    const urls=Array.isArray(p.urls)?p.urls:[];
-    if(urls.length>30||urls.some(y=>typeof y!=="string"||y.length>3000)) throw new Error("Invalid URLs");
+    const validLinks=(key:"urls"|"quotedUrls"|"images"):string[]=>{
+      if(p[key]===undefined)return [];
+      const links=p[key];
+      if(!Array.isArray(links)||links.length>30||
+        links.some(value=>typeof value!=="string"||value.length>3000)){
+        throw new Error("Invalid "+key);
+      }
+      return links as string[];
+    };
+    if(p.quotedText!==undefined&&(typeof p.quotedText!=="string"||p.quotedText.length>12000)){
+      throw new Error("Invalid quoted text");
+    }
+    const publishedAt=typeof p.publishedAt==="string"&&Number.isFinite(Date.parse(p.publishedAt))?
+      new Date(p.publishedAt).toISOString():undefined;
     return {
       id:p.id as string,url:p.url as string,author:p.author as string,
-      username:p.username as string,text:p.text as string,urls:urls as string[],
-      publishedAt:typeof p.publishedAt==="string"?p.publishedAt:undefined
+      username:p.username as string,text:p.text as string,
+      urls:validLinks("urls"),quotedUrls:validLinks("quotedUrls"),
+      images:validLinks("images"),
+      quotedText:typeof p.quotedText==="string"?p.quotedText:undefined,
+      publishedAt
     };
   });
 }
@@ -80,7 +95,8 @@ export function startServer(config:ServerOptions):ReturnType<typeof createServer
       const observations=config.feed?await fetchRSS(config.feed):readFixture(config.fixture!);
       inputAcquired=true;
       const result=ingest(config.db,observations,config.profile,connector,references());
-      return {result,export:config.vault?exportToVault(config.db,config.vault):null};
+      const analysis=config.autoEnrich?await enrich(config.db,config.profile,references(),10,false):null;
+      return {result,analysis,export:config.vault?exportToVault(config.db,config.vault):null};
     }catch(error){
       if(!inputAcquired){
         const store=new Store(config.db);
@@ -113,7 +129,8 @@ export function startServer(config:ServerOptions):ReturnType<typeof createServer
         busy=true;
         try{
           const result=ingest(config.db,posts,config.profile,"manual",references());
-          json(res,200,{result,export:config.vault?exportToVault(config.db,config.vault):null});
+          const analysis=config.autoEnrich?await enrich(config.db,config.profile,references(),10,false):null;
+          json(res,200,{result,analysis,export:config.vault?exportToVault(config.db,config.vault):null});
         }finally{busy=false;}
         return;
       }
@@ -158,10 +175,13 @@ export function startServer(config:ServerOptions):ReturnType<typeof createServer
           }
         }else if(req.method==="GET"&&url.pathname==="/status"){
           json(res,200,{...store.stats(),active:busy,paused,connectedSource:source(),
-            personalizedXFeed:"not_available",feedUrl:config.feed||null});
+            personalizedXFeed:"not_available",feedUrl:config.feed||null,autoEnrich:Boolean(config.autoEnrich)});
         }else if(req.method==="GET"&&url.pathname==="/sources"){
           json(res,200,store.listSources(url.searchParams.get("status")||undefined,
-            url.searchParams.get("q")||undefined,Number(url.searchParams.get("limit")||100)));
+            url.searchParams.get("q")||undefined,Number(url.searchParams.get("limit")||100),
+            Number(url.searchParams.get("offset")||0)));
+        }else if(req.method==="GET"&&url.pathname==="/errors"){
+          json(res,200,store.recentErrors(20));
         }else if(req.method==="GET"&&url.pathname==="/visuals"){
           json(res,200,store.listVisualPosts(200));
         }else if(req.method==="GET"&&url.pathname==="/posts"){

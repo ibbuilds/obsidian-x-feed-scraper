@@ -1,7 +1,9 @@
-import {createHash, randomUUID} from "node:crypto";
-import {existsSync, readFileSync, linkSync, writeFileSync, unlinkSync, lstatSync} from "node:fs";
+import {createHash} from "node:crypto";
+import {existsSync, readFileSync} from "node:fs";
 import {join} from "node:path";
-import {ensureVaultPath, isSymlink} from "./vault-safe.ts";
+import {ensureVaultPath} from "./vault-safe.ts";
+import {retireManagedNote,writeManagedNote,type ManagedResult} from "./managed-notes.ts";
+import {acquireLock} from "./lock.ts";
 import {Store} from "../storage/store.ts";
 import type {Source} from "./types.ts";
 import {importReferences} from "./pipeline.ts";
@@ -18,6 +20,8 @@ export function renderSource(source: Source): string {
     "type: x-feed-source",
     "url: " + yaml(source.url),
     "title: " + yaml(source.title),
+    ...(source.description ? ["description: " + yaml(source.description)] : []),
+    ...(source.license ? ["license: " + yaml(source.license)] : []),
     "category: " + yaml(source.category),
     "status: " + yaml(source.status),
     "access: " + yaml(source.access),
@@ -34,42 +38,13 @@ export function renderSource(source: Source): string {
     "Source: [" + label + "](<" + url + ">)",
     source.postUrl ? "Discovered in: [original post](<" + source.postUrl.replace(/[<>]/g,"") + ">)" : "",
     "",
+    ...(source.description ? ["## Description","",oneLine(source.description,500),""] : []),
     "## Evaluation", "",
     ...source.reasons.map(r=>"- " + oneLine(r,300)),
     "",
     "> Scores are heuristic. Review before adding to References.md.",
     ""
   ].filter((line,index,all)=>index!==all.length-1 || line!=="").join("\n")+"\n";
-}
-/** Atomic create-only promotion; never overwrites an existing or edited vault note. */
-function putIfAbsent(path:string,content:string):"created"|"same"|"conflict"{
-  if(isSymlink(path)) return "conflict";
-  if(existsSync(path))return readFileSync(path,"utf8")===content?"same":"conflict";
-  const temp=path+".tmp-"+randomUUID();
-  try{
-    writeFileSync(temp,content,{encoding:"utf8",flag:"wx",mode:0o600});
-    try{
-      // Hard-link is an atomic create-only operation (EEXIST protects user files).
-      linkSync(temp,path);
-      return "created";
-    }catch(e){
-      const code=(e as NodeJS.ErrnoException).code;
-      if(code==="EEXIST")return isSymlink(path)?"conflict":readFileSync(path,"utf8")===content?"same":"conflict";
-      if(["EPERM","ENOTSUP","EOPNOTSUPP"].includes(code||"")){
-        // Some filesystems do not support hard links; exclusive write still never clobbers.
-        try{
-          writeFileSync(path,content,{flag:"wx",mode:0o600});
-          return "created";
-        }catch(fallback){
-          if((fallback as NodeJS.ErrnoException).code==="EEXIST"){
-            return isSymlink(path)?"conflict":readFileSync(path,"utf8")===content?"same":"conflict";
-          }
-          throw fallback;
-        }
-      }
-      throw e;
-    }
-  }finally{if(existsSync(temp))unlinkSync(temp);}
 }
 const BASE = [
   "filters:",
@@ -113,7 +88,8 @@ const BASE = [
   "      - discovered_date",
   ""
 ].join("\n");
-export function exportToVault(dbPath:string,vaultPath:string): {created:number;unchanged:number;conflicts:number;skipped:number} {
+export function exportToVault(dbPath:string,vaultPath:string):
+  {created:number;unchanged:number;updated:number;removed:number;conflicts:number;skipped:number;conflictPaths:string[]} {
   const root=ensureVaultPath(vaultPath,[]);
   const folder=ensureVaultPath(root,["X Feed Scraper"]);
   for(const child of ["Candidates","Approved","Reports","Visuals"]){
@@ -121,37 +97,48 @@ export function exportToVault(dbPath:string,vaultPath:string): {created:number;u
   }
   const referencesFile=join(root,"References.md");
   const library=existsSync(referencesFile)?importReferences(readFileSync(referencesFile,"utf8")):new Set<string>();
-  const store=new Store(dbPath);
-  const result={created:0,unchanged:0,conflicts:0,skipped:0};
+  // Share the durable lock with ingestion/enrichment to prevent parallel vault exports.
+  const release=acquireLock(dbPath+".lock");
+  let store:Store;
+  try{store=new Store(dbPath);}
+  catch(error){release();throw error;}
+  const result={created:0,unchanged:0,updated:0,removed:0,conflicts:0,skipped:0,conflictPaths:[] as string[]};
+  const conflict=(relative:string):void=>{
+    result.conflicts++;
+    if(result.conflictPaths.length<100)result.conflictPaths.push(relative);
+  };
+  const countWrite=(value:ManagedResult,relative:string):void=>{
+    if(value==="created")result.created++;
+    else if(value==="unchanged")result.unchanged++;
+    else if(value==="updated")result.updated++;
+    else conflict(relative);
+  };
+  const retire=(relative:string):void=>{
+    const decision=retireManagedNote(store,root,relative);
+    if(decision==="removed")result.removed++;
+    else if(decision==="conflict")conflict(relative);
+  };
   try {
     for(let offset=0;;offset+=200){
       const page=store.listSourcesPage(offset,200);
       if(page.length===0)break;
     for (const source of page) {
-      if (library.has(source.url) || source.status==="rejected" || source.category==="existing_reference" ||
-          (source.category==="uncategorized" && source.status!=="approved")) {
-        result.skipped++;continue;
-      }
-      const folderName=source.status==="approved"?"Approved":"Candidates";
       const shortId=createHash("sha256").update(source.url).digest("hex").slice(0,20);
-      const output=join(folder,folderName,shortId+".md");
-      const value=putIfAbsent(output,renderSource(source));
-      if (value==="created") result.created++;
-      else if (value==="same") result.unchanged++;
-      else result.conflicts++;
-      // Only discard an unmodified generated candidate once an approved file exists.
-      if(source.status==="approved" && value!=="conflict"){
-        const oldFile=join(folder,"Candidates",shortId+".md");
-        if(isSymlink(oldFile)){
-          result.conflicts++;
-        }else if(existsSync(oldFile)){
-          const oldContent=readFileSync(oldFile,"utf8");
-          const generated=["discovered","pending_analysis","evaluated","high_quality","needs_review"]
-            .some(status=>oldContent===renderSource({...source,status:status as Source["status"]}));
-          if(generated)unlinkSync(oldFile);
-          else result.conflicts++; // Edited candidate intentionally remains untouched.
-        }
+      const candidatePath=join("X Feed Scraper","Candidates",shortId+".md");
+      const approvedPath=join("X Feed Scraper","Approved",shortId+".md");
+      if(library.has(source.url) || source.category==="existing_reference" ||
+          source.status==="rejected" || source.category==="excluded" ||
+          (source.category==="uncategorized" && source.status!=="approved")){
+        result.skipped++;
+        retire(candidatePath);
+        if(source.status==="rejected")retire(approvedPath);
+        continue;
       }
+      const relative=source.status==="approved"?approvedPath:candidatePath;
+      const value=writeManagedNote(store,root,relative,renderSource(source));
+      countWrite(value,relative);
+      // Approval transitions do not leave stale generated candidate notes.
+      if(source.status==="approved"&&value!=="conflict")retire(candidatePath);
     }
     }
     for(const visual of store.listVisualPosts(1000)){
@@ -181,10 +168,8 @@ export function exportToVault(dbPath:string,vaultPath:string): {created:number;u
         ...media.map(link=>"- [Open image](<"+link.replace(/[<>]/g,"")+">)"),
         "","No source project URL was observed. Do not infer one.",""
       ].join("\n");
-      const resultType=putIfAbsent(join(folder,"Visuals",id+".md"),text);
-      if(resultType==="created")result.created++;
-      else if(resultType==="same")result.unchanged++;
-      else result.conflicts++;
+      const relative=join("X Feed Scraper","Visuals",id+".md");
+      countWrite(writeManagedNote(store,root,relative,text),relative);
     }
     const stats=store.stats();
     const lastRun=stats.lastRun as {id?:string;started_at?:string;status?:string}|null;
@@ -205,15 +190,11 @@ export function exportToVault(dbPath:string,vaultPath:string): {created:number;u
         "",
         "Scores are heuristic; the personalized X feed has not been accessed.",""
       ].join("\n");
-      const reportState=putIfAbsent(join(folder,"Reports",lastRun.id+".md"),report);
-      if (reportState==="created") result.created++;
-      else if (reportState==="same") result.unchanged++;
-      else result.conflicts++;
+      const relative=join("X Feed Scraper","Reports",lastRun.id+".md");
+      countWrite(writeManagedNote(store,root,relative,report),relative);
     }
-    const state=putIfAbsent(join(folder,"Sources.base"),BASE);
-    if (state==="created") result.created++;
-    else if (state==="same") result.unchanged++;
-    else result.conflicts++;
+    const baseRelative=join("X Feed Scraper","Sources.base");
+    countWrite(writeManagedNote(store,root,baseRelative,BASE),baseRelative);
     return result;
-  } finally {store.close();}
+  } finally {try{store.close();}finally{release();}}
 }

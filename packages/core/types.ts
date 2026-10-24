@@ -43,6 +43,9 @@ export interface Source {
   id: number;
   url: string;
   title: string;
+  description?: string;
+  license?: string;
+  contentType?: string;
   category: string;
   access: Access;
   score: number;

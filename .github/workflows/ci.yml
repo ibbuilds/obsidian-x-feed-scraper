@@ -20,6 +20,8 @@ jobs:
           node-version: '22.16.0'
       - name: Install
         run: npm ci --no-audit --no-fund
+      - name: Production dependency audit
+        run: npm audit --omit=dev --audit-level=high
       - name: Static typecheck
         run: npm run check
       - name: Build installable Obsidian plugin ZIP

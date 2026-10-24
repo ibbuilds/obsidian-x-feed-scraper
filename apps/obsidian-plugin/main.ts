@@ -8,15 +8,17 @@ import {libraryContains,appendApprovedReference} from "./library.ts";
 import {join} from "node:path";
 import {LocalBridge} from "./bridge.ts";
 import {prepareBundledAssets} from "./embedded.ts";
+import {normalizeUrl} from "../../packages/core/url.ts";
 
 const VIEW="x-feed-scraper-view";
 interface SettingsData {
   nodeExecutable:string;autoStart:boolean;feedUrl:string;fixturePath:string;
   profilePath:string;intervalMinutes:number;scoreThreshold:number;
-  confidenceThreshold:number;preferFree:boolean;
+  confidenceThreshold:number;preferFree:boolean;autoEnrich:boolean;
 }
 interface Source {
-  id:number;url:string;title:string;category:string;access:string;
+  id:number;url:string;title:string;description?:string;license?:string;
+  category:string;access:string;
   score:number;confidence:number;status:string;reasons:string[];
   firstSeen:string;postUrl?:string;author?:string;
 }
@@ -24,7 +26,7 @@ interface Stats {
   posts:number;visuals:number;sources:number;links:number;high_quality:number;
   needs_review:number;approved:number;errors:number;
   active:boolean;paused:boolean;connectedSource:string;
-  personalizedXFeed:string;feedUrl?:string|null;
+  personalizedXFeed:string;feedUrl?:string|null;autoEnrich?:boolean;
   lastRun?:{started_at:string;ended_at:string;status:string;posts_seen:number;duplicates:number};
 }
 interface Recommendations {
@@ -33,7 +35,7 @@ interface Recommendations {
 }
 const DEFAULT:SettingsData={
   nodeExecutable:"node",autoStart:true,feedUrl:"",fixturePath:"",profilePath:"",
-  intervalMinutes:60,scoreThreshold:75,confidenceThreshold:0.65,preferFree:true
+  intervalMinutes:60,scoreThreshold:75,confidenceThreshold:0.65,preferFree:true,autoEnrich:false
 };
 function asError(error:unknown):string {
   return error instanceof Error?error.message:String(error);
@@ -83,7 +85,9 @@ class ReviewModal extends Modal {
     new Setting(this.contentEl).addButton(b=>b.setButtonText("Save review").setCta().onClick(async()=>{
       if(!field.value.trim()){new Notice("A reason is required");return;}
       try{
-        await plugin.call("/review","POST",{id:source.id,decision,reason:field.value.trim(),access:selectedAccess});
+        const response=await plugin.call("/review","POST",{id:source.id,decision,
+          reason:field.value.trim(),access:selectedAccess});
+        plugin.notifyExport(response);
         this.close();done();new Notice("Decision stored locally");
       }catch(e){new Notice(asError(e));}
     }));
@@ -118,7 +122,8 @@ class ImportModal extends Modal {
               text:bar>=0?line.slice(bar+3).trim():source};
           });
         }
-        await plugin.call("/import","POST",{posts});
+        const response=await plugin.call("/import","POST",{posts});
+        plugin.notifyExport(response);
         new Notice("Observations imported into SQLite");
         this.close();done();
       }catch(e){new Notice("Invalid import: "+asError(e));}
@@ -128,6 +133,7 @@ class ImportModal extends Modal {
 class SourceView extends ItemView {
   private query="";
   private status="";
+  private page=0;
   constructor(leaf:WorkspaceLeaf,private plugin:ScraperPlugin){super(leaf);}
   getViewType():string{return VIEW;}
   getDisplayText():string{return "X Feed Scraper";}
@@ -150,19 +156,22 @@ class SourceView extends ItemView {
       return;
     }
     try{
-      const query="/sources?limit=100"+(this.status?"&status="+encodeURIComponent(this.status):"")+
+      const query="/sources?limit=100&offset="+(this.page*100)+(this.status?"&status="+encodeURIComponent(this.status):"")+
         (this.query?"&q="+encodeURIComponent(this.query):"");
-      const [stats,sources,recs,history,visuals]=await Promise.all([
+      const [stats,sources,recs,history,visuals,recentErrors]=await Promise.all([
         this.plugin.call("/status") as Promise<Stats>,
         this.plugin.call(query) as Promise<Source[]>,
         this.plugin.call("/recommendations") as Promise<Recommendations>,
         this.plugin.call("/history") as Promise<Array<{started_at:string;status:string;posts_seen:number;sources_new:number;duplicates:number}>>,
-        this.plugin.call("/visuals") as Promise<Array<{id:string;url:string;author:string;first_seen:string}>>
+        this.plugin.call("/visuals") as Promise<Array<{id:string;url:string;author:string;first_seen:string}>>,
+        this.plugin.call("/errors") as Promise<Array<{occurred_at:string;message:string}>>
       ]);
       root.createEl("div",{cls:"xfs-stats",text:"Source: "+stats.connectedSource+
         " · Posts "+stats.posts+" · Unique sources "+stats.sources+
         " · Review "+stats.needs_review+" · Visuals "+stats.visuals+" · High quality "+stats.high_quality+
         " · Approved "+stats.approved+" · Errors "+stats.errors});
+      root.createEl("p",{cls:"xfs-meta",text:"Automatic public metadata analysis: "+
+        (stats.autoEnrich?"enabled by user":"off (opt-in under Settings)")});
       root.createEl("p",{cls:"xfs-meta",text:stats.paused?"Paused":
         stats.active?"Synchronization running":"Collector active; service bound to localhost only"});
       if(stats.lastRun)root.createEl("p",{cls:"xfs-meta",text:"Last run: "+
@@ -187,7 +196,9 @@ class SourceView extends ItemView {
       button(actions,"Check public metadata",()=>new ConfirmAction(this.plugin,
         "Fetch public metadata?","This makes network requests to up to 10 discovered public websites. "+
         "No authenticated X content is retrieved.","Fetch metadata",async()=>{
-          await this.plugin.call("/enrich","POST",{limit:10});await this.draw();
+          const response=await this.plugin.call("/enrich","POST",{limit:10});
+          this.plugin.notifyExport(response);
+          await this.draw();
         }).open());
       button(actions,"Export notes",()=>{void this.action("/export");});
       button(actions,"Open Bases",()=>{
@@ -208,9 +219,17 @@ class SourceView extends ItemView {
       }
       filter.value=this.status;
       button(controls,"Search",()=>{
-        this.query=search.value.trim().slice(0,100);this.status=filter.value;
+        this.query=search.value.trim().slice(0,100);this.status=filter.value;this.page=0;
         void this.draw();
       });
+      const pager=controls.createDiv({cls:"xfs-actions"});
+      button(pager,"Previous",()=>{
+        this.page=Math.max(0,this.page-1);void this.draw();
+      }).disabled=this.page===0;
+      pager.createSpan({text:"Page "+(this.page+1)});
+      button(pager,"Next",()=>{
+        this.page++;void this.draw();
+      }).disabled=sources.length<100;
       if(!sources.length)root.createEl("p",{cls:"xfs-muted",text:"No sources match the filter."});
       for(const source of sources){
         const card=root.createDiv({cls:"xfs-card"});
@@ -220,6 +239,8 @@ class SourceView extends ItemView {
         const links=card.createDiv({cls:"xfs-actions"});
         external(links,"Open source",source.url);
         if(source.postUrl)external(links,"Original observation",source.postUrl);
+        if(source.description)card.createEl("p",{text:source.description.slice(0,500)});
+        if(source.license)card.createEl("p",{cls:"xfs-meta",text:"License: "+source.license});
         card.createEl("p",{text:source.reasons.join(" · ")});
         const decisions=card.createDiv({cls:"xfs-actions"});
         if(source.status!=="approved"&&source.status!=="rejected"){
@@ -243,6 +264,12 @@ class SourceView extends ItemView {
       for(const visual of visuals){
         const item=visualSection.createDiv();
         external(item,visual.author+" · "+visual.first_seen,visual.url);
+      }
+      const errorSection=root.createEl("details");
+      errorSection.createEl("summary",{text:"Recent errors ("+recentErrors.length+")"});
+      if(!recentErrors.length)errorSection.createEl("p",{text:"No recent errors recorded."});
+      for(const error of recentErrors){
+        errorSection.createEl("p",{cls:"xfs-meta",text:error.occurred_at+" · "+error.message});
       }
       const log=root.createEl("details");
       log.createEl("summary",{text:"Run history"});
@@ -270,7 +297,11 @@ class SourceView extends ItemView {
     }
   }
   private async action(path:string):Promise<void>{
-    try{await this.plugin.call(path,"POST");await this.draw();}
+    try{
+      const response=await this.plugin.call(path,"POST");
+      this.plugin.notifyExport(response);
+      await this.draw();
+    }
     catch(e){new Notice(asError(e));}
   }
 }
@@ -293,7 +324,15 @@ class ScraperSettings extends PluginSettingTab {
     new Setting(root).setName("Authorized RSS/Atom URL")
       .setDesc("Public HTTP(S) feeds only. Do not use account/session tokens here. Not an X feed.")
       .addText(t=>t.setValue(this.plugin.settings.feedUrl).onChange(async value=>{
-        this.plugin.settings.feedUrl=value.trim();await this.plugin.saveSettings();
+        const candidate=value.trim();
+        try{
+          if(candidate)normalizeUrl(candidate);
+        }catch{
+          new Notice("Public feed URL rejected: credentials or invalid URL parameters. No secret was saved.");
+          return;
+        }
+        this.plugin.settings.feedUrl=candidate;
+        await this.plugin.saveSettings();
       }));
     new Setting(root).setName("Local fixture file (tests only)")
       .setDesc("Alternative to RSS; must be a local JSON file. Never indicates actual X coverage.")
@@ -324,6 +363,11 @@ class ScraperSettings extends PluginSettingTab {
       .addToggle(t=>t.setValue(this.plugin.settings.preferFree).onChange(async value=>{
         this.plugin.settings.preferFree=value;await this.plugin.saveSettings();
       }));
+    new Setting(root).setName("Automatically analyze public source metadata")
+      .setDesc("Opt-in: on every permitted synchronization, fetch titles/descriptions and public GitHub license information from up to 10 external websites. No X website automation or credentials. Retries are bounded.")
+      .addToggle(t=>t.setValue(this.plugin.settings.autoEnrich).onChange(async value=>{
+        this.plugin.settings.autoEnrich=value;await this.plugin.saveSettings();
+      }));
     new Setting(root).setName("Custom research profile")
       .setDesc("Optional absolute path to a JSON profile; defaults to packaged design.json")
       .addText(t=>t.setValue(this.plugin.settings.profilePath).onChange(async value=>{
@@ -346,6 +390,14 @@ export default class ScraperPlugin extends Plugin {
   async onload():Promise<void>{
     const loaded=await this.loadData() as Partial<SettingsData>|null;
     this.settings={...DEFAULT,...(loaded||{})};
+    if(this.settings.feedUrl){
+      try{normalizeUrl(this.settings.feedUrl);}
+      catch{
+        this.settings.feedUrl="";
+        await this.saveSettings();
+        new Notice("An unsafe saved feed URL was cleared. Credentials must not be stored in the vault.");
+      }
+    }
     this.registerView(VIEW,leaf=>new SourceView(leaf,this));
     this.addRibbonIcon("book-open-check","Open X Feed Scraper",()=>{void this.activate();});
     this.addCommand({id:"open-candidates",name:"Open curated sources",callback:()=>{void this.activate();}});
@@ -358,6 +410,20 @@ export default class ScraperPlugin extends Plugin {
   async onunload():Promise<void>{
     await this.bridge.stop();
     this.app.workspace.detachLeavesOfType(VIEW);
+  }
+  notifyExport(raw:unknown):void{
+    if(!raw||typeof raw!=="object")return;
+    const result=(raw as {export?:unknown}).export;
+    if(!result||typeof result!=="object")return;
+    const x=result as {created?:number;updated?:number;removed?:number;conflicts?:number;conflictPaths?:string[]};
+    const summary="Notes: "+(x.created||0)+" created, "+(x.updated||0)+" updated, "+
+      (x.removed||0)+" retired";
+    if(x.conflicts){
+      const paths=(x.conflictPaths||[]).slice(0,3).join("; ");
+      new Notice(summary+". "+x.conflicts+" edit conflicts preserved. "+paths,12000);
+    }else if((x.created||0)+(x.updated||0)+(x.removed||0)>0){
+      new Notice(summary,5500);
+    }
   }
   async saveSettings():Promise<void>{await this.saveData(this.settings);}
   private paths():{dir:string;vault:string}{
@@ -392,7 +458,8 @@ export default class ScraperPlugin extends Plugin {
       scheduleMinutes:this.settings.intervalMinutes,
       threshold:this.settings.scoreThreshold,
       confidence:this.settings.confidenceThreshold,
-      preferFree:this.settings.preferFree
+      preferFree:this.settings.preferFree,
+      autoEnrich:this.settings.autoEnrich
     });
   }
   async restart():Promise<void>{

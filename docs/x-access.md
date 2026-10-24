@@ -9,15 +9,14 @@
 - We do not use undocumented APIs, authenticated browser session extraction, CAPTCHA bypass,
   anti-bot evasion, automated likes, or automated follows.
 - Existing browser-based MCP implementations are not treated as proof of authorization.
-- Input is currently a local fixture connector only. Replace it with an authorized connector
-  implementing the Post interface when an actual access method is verified.
+- Currently supported independent inputs are permitted public RSS/Atom feeds, user-provided manual observations and synthetic fixtures. None are equivalent to personalized For You results. An authorized connector can implement the existing Post interface once the true feed is accessible.
 - The feed is dynamic: future integrations should log observations, not promise full coverage.
 
 Official sources:
 - https://docs.x.com/x-api/introduction
 - https://docs.x.com/x-api/getting-started/pricing
 - https://docs.x.com/developer-terms/agreement
-- https://help.x.com/en/rules-and-policies/x-rules
+- https://help.x.com/en/rules-and-policies/x-automation
 
 Verification still required: the user's permission to access personalized recommendations,
 the endpoint's availability, actual billing and limits, and a successful local end-to-end read

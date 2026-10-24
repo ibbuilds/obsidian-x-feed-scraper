@@ -4,11 +4,15 @@ import {dirname} from "node:path";
 import {randomUUID} from "node:crypto";
 import type {Access, Evaluation, Metadata, Post, Source, Status} from "../core/types.ts";
 import {normalizeUrl} from "../core/url.ts";
+import {acquireLock} from "../core/lock.ts";
 
 type Row = Record<string, unknown>;
 function asSource(row: Row): Source {
   return {
     id: Number(row.id), url: String(row.normalized_url), title: String(row.title || ""),
+    description: typeof row.description === "string" ? row.description : undefined,
+    license: typeof row.license === "string" ? row.license : undefined,
+    contentType: typeof row.content_type === "string" ? row.content_type : undefined,
     category: String(row.category || "uncategorized"), access: String(row.access) as Source["access"],
     score: Number(row.score), confidence: Number(row.confidence), status: String(row.status) as Status,
     reasons: JSON.parse(String(row.reasons || "[]")) as string[],
@@ -18,7 +22,9 @@ function asSource(row: Row): Source {
 }
 export class Store {
   readonly db: DatabaseSync;
+  readonly file: string;
   constructor(file: string) {
+    this.file=file;
     mkdirSync(dirname(file), {recursive: true});
     this.db = new DatabaseSync(file);
     this.db.exec("PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON; PRAGMA busy_timeout=3000");
@@ -32,6 +38,8 @@ export class Store {
       "CREATE TABLE IF NOT EXISTS errors (id INTEGER PRIMARY KEY, run_id TEXT REFERENCES runs(id), post_id TEXT, message TEXT NOT NULL, occurred_at TEXT NOT NULL);" +
       "CREATE TABLE IF NOT EXISTS checkpoints (connector TEXT PRIMARY KEY, last_run_id TEXT, updated_at TEXT NOT NULL);" +
       "CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);" +
+      "CREATE TABLE IF NOT EXISTS exported_notes (vault_id TEXT NOT NULL, note_path TEXT NOT NULL, content_hash TEXT NOT NULL, updated_at TEXT NOT NULL, PRIMARY KEY(vault_id,note_path));" +
+      "CREATE TABLE IF NOT EXISTS enrichment_attempts (source_id INTEGER PRIMARY KEY REFERENCES sources(id) ON DELETE CASCADE, attempts INTEGER NOT NULL DEFAULT 0, next_attempt_at TEXT, last_error TEXT);" +
       "CREATE INDEX IF NOT EXISTS idx_source_status_score ON sources(status,score DESC);" +
       "CREATE INDEX IF NOT EXISTS idx_sightings_post ON sightings(connector,post_id);" +
       "CREATE INDEX IF NOT EXISTS idx_post_sources_source ON post_sources(source_id);"
@@ -59,10 +67,17 @@ export class Store {
   }
   savePost(runId: string, connector: string, post: Post): boolean {
     if (!post.id?.trim() || !post.url?.trim()) throw new Error("Post requires nonempty ID and URL");
-    normalizeUrl(post.url);
+    // Never store raw post/media URLs containing fragments or credential-bearing query parameters.
+    const postUrl=normalizeUrl(post.url);
+    const images:string[]=[];
+    for(const raw of post.images||[]){
+      try{images.push(normalizeUrl(raw));}
+      catch{/* Images with unsafe or non-web URLs are not exported. */}
+      if(images.length>=30)break;
+    }
     const now = new Date().toISOString();
     const result = this.db.prepare("INSERT OR IGNORE INTO posts(id,connector,url,author,username,text,published_at,images_json,first_seen,last_seen,processing_status) VALUES (?,?,?,?,?,?,?,?,?,?,'processing')")
-      .run(post.id, connector, post.url, post.author, post.username, post.text, post.publishedAt || null, JSON.stringify(post.images || []), now, now);
+      .run(post.id, connector, postUrl, post.author, post.username, post.text, post.publishedAt || null, JSON.stringify(images), now, now);
     this.db.prepare("UPDATE posts SET last_seen=? WHERE id=? AND connector=?").run(now,post.id,connector);
     this.db.prepare("INSERT OR IGNORE INTO sightings(run_id,connector,post_id,seen_at) VALUES(?,?,?,?)").run(runId,connector,post.id,now);
     return result.changes > 0;
@@ -108,32 +123,65 @@ export class Store {
         JSON.stringify(evaluation.reasons),new Date().toISOString(),id);
   }
   error(runId: string, postId: string, message: string): void {
+    const sanitized=message
+      .replace(/https?:\/\/[^\s'"<>]+/gi,"[redacted-url]")
+      .replace(/\bBearer\s+[a-z0-9._~+/-]+/gi,"Bearer [redacted]")
+      .replace(/(?:token|password|secret|cookie|session|api[_-]?key)\s*[:=]\s*[^\s,;]+/gi,"[redacted-credential]");
     this.db.prepare("INSERT INTO errors(run_id,post_id,message,occurred_at) VALUES(?,?,?,?)")
-      .run(runId,postId,message.slice(0,300),new Date().toISOString());
+      .run(runId,postId,sanitized.slice(0,300),new Date().toISOString());
+  }
+  recentErrors(limit=20):Row[]{
+    return this.db.prepare(
+      "SELECT occurred_at,message FROM errors ORDER BY id DESC LIMIT ?"
+    ).all(Math.min(100,Math.max(1,Math.floor(limit)))) as Row[];
   }
   getSource(id: number): Source | undefined {
     const row = this.db.prepare("SELECT s.*,p.url post_url,p.author FROM sources s LEFT JOIN post_sources ps ON ps.source_id=s.id LEFT JOIN posts p ON p.id=ps.post_id AND p.connector=ps.connector WHERE s.id=? LIMIT 1").get(id) as Row|undefined;
     return row ? asSource(row) : undefined;
   }
-  listSources(status?: string, search?: string, limit = 100): Source[] {
-    const safeLimit = Math.max(1, Math.min(500,Math.floor(limit)));
+  listSources(status?: string, search?: string, limit = 100, offset = 0): Source[] {
+    const safeLimit = Number.isFinite(limit) ? Math.max(1, Math.min(500,Math.floor(limit))) : 100;
+    const safeOffset = Number.isFinite(offset) ? Math.max(0,Math.min(1000000,Math.floor(offset))) : 0;
     const query = "SELECT s.*, (SELECT p.url FROM post_sources ps JOIN posts p ON p.connector=ps.connector AND p.id=ps.post_id WHERE ps.source_id=s.id LIMIT 1) post_url," +
       " (SELECT p.author FROM post_sources ps JOIN posts p ON p.connector=ps.connector AND p.id=ps.post_id WHERE ps.source_id=s.id LIMIT 1) author FROM sources s" +
-      " WHERE (? IS NULL OR s.status=?) AND (? IS NULL OR (s.title LIKE ? OR s.normalized_url LIKE ? OR s.category LIKE ?)) ORDER BY s.score DESC,s.first_seen DESC LIMIT ?";
+      " WHERE (? IS NULL OR s.status=?) AND (? IS NULL OR (s.title LIKE ? OR s.normalized_url LIKE ? OR s.category LIKE ?)) ORDER BY s.score DESC,s.first_seen DESC LIMIT ? OFFSET ?";
     const q = search ? "%" + search.slice(0,100) + "%" : null;
-    return (this.db.prepare(query).all(status || null,status || null,q,q,q,q,safeLimit) as Row[]).map(asSource);
+    return (this.db.prepare(query).all(status || null,status || null,q,q,q,q,safeLimit,safeOffset) as Row[]).map(asSource);
   }
-  pendingForEnrichment(limit=20):Source[] {
+  pendingForEnrichment(limit=20,manual=true):Source[] {
     const safeLimit=Math.max(1,Math.min(100,Math.floor(limit)));
     const rows=this.db.prepare(
       "SELECT s.*, "+
       "(SELECT p.url FROM post_sources ps JOIN posts p ON p.connector=ps.connector AND p.id=ps.post_id WHERE ps.source_id=s.id LIMIT 1) post_url,"+
       "(SELECT p.author FROM post_sources ps JOIN posts p ON p.connector=ps.connector AND p.id=ps.post_id WHERE ps.source_id=s.id LIMIT 1) author "+
-      "FROM sources s WHERE s.status NOT IN ('approved','rejected') "+
-      "AND s.category != 'existing_reference' AND (s.description IS NULL OR s.description='') "+
+      "FROM sources s LEFT JOIN enrichment_attempts ea ON ea.source_id=s.id "+
+      "WHERE s.status NOT IN ('approved','rejected') "+
+      "AND s.category NOT IN ('existing_reference','excluded') "+
+      "AND (s.description IS NULL OR s.description='') "+
+      "AND (?=1 OR (COALESCE(ea.attempts,0)<3 AND "+
+      "(ea.next_attempt_at IS NULL OR ea.next_attempt_at<=?))) "+
       "ORDER BY s.score DESC LIMIT ?"
-    ).all(safeLimit) as Row[];
+    ).all(manual?1:0,new Date().toISOString(),safeLimit) as Row[];
     return rows.map(asSource);
+  }
+  markMetadataAttempt(id:number,error?:string):void {
+    if(error){
+      const previous=this.db.prepare("SELECT attempts FROM enrichment_attempts WHERE source_id=?")
+        .get(id) as {attempts:number}|undefined;
+      const attempt=Math.min(3,(previous?.attempts||0)+1);
+      const after=new Date(Date.now()+3600000*Math.pow(2,attempt-1)).toISOString();
+      this.db.prepare(
+        "INSERT INTO enrichment_attempts(source_id,attempts,next_attempt_at,last_error) VALUES(?,?,?,?) "+
+        "ON CONFLICT(source_id) DO UPDATE SET attempts=excluded.attempts,"+
+        "next_attempt_at=excluded.next_attempt_at,last_error=excluded.last_error"
+      ).run(id,attempt,after,error.slice(0,200));
+    }else{
+      const next=new Date(Date.now()+7*86400000).toISOString();
+      this.db.prepare(
+        "INSERT INTO enrichment_attempts(source_id,attempts,next_attempt_at,last_error) VALUES(?,0,?,NULL) "+
+        "ON CONFLICT(source_id) DO UPDATE SET attempts=0,next_attempt_at=excluded.next_attempt_at,last_error=NULL"
+      ).run(id,next);
+    }
   }
   listSourcesPage(offset=0,limit=200):Source[] {
     const safeOffset=Math.max(0,Math.floor(offset));
@@ -145,6 +193,20 @@ export class Store {
       "FROM sources s ORDER BY s.id ASC LIMIT ? OFFSET ?"
     ).all(safeLimit,safeOffset) as Row[];
     return rows.map(asSource);
+  }
+  getExportHash(vaultId:string,relativePath:string):string|undefined {
+    const row=this.db.prepare("SELECT content_hash FROM exported_notes WHERE vault_id=? AND note_path=?")
+      .get(vaultId,relativePath) as {content_hash:string}|undefined;
+    return row?.content_hash;
+  }
+  recordExport(vaultId:string,relativePath:string,hash:string):void {
+    this.db.prepare(
+      "INSERT INTO exported_notes(vault_id,note_path,content_hash,updated_at) VALUES(?,?,?,?) "+
+      "ON CONFLICT(vault_id,note_path) DO UPDATE SET content_hash=excluded.content_hash,updated_at=excluded.updated_at"
+    ).run(vaultId,relativePath,hash,new Date().toISOString());
+  }
+  clearExport(vaultId:string,relativePath:string):void {
+    this.db.prepare("DELETE FROM exported_notes WHERE vault_id=? AND note_path=?").run(vaultId,relativePath);
   }
   listVisualPosts(limit=200):Row[] {
     return this.db.prepare(
@@ -158,6 +220,8 @@ export class Store {
   review(id: number, decision: "approved"|"rejected"|"needs_review"|"excellent", reason: string, access?:Access): Source {
     if (!reason.trim()) throw new Error("Review reason is required");
     if(access && !["unknown","free","open_source","freemium","paid"].includes(access)) throw new Error("Invalid access classification");
+    const release=acquireLock(this.file+".lock");
+    try{
     const source = this.getSource(id);
     if (!source) throw new Error("Source not found");
     const status = decision === "excellent" ? "approved" : decision;
@@ -170,6 +234,7 @@ export class Store {
       this.db.exec("COMMIT");
     } catch (e) {this.db.exec("ROLLBACK");throw e;}
     return this.getSource(id)!;
+    }finally{release();}
   }
   getMetadata(id: number): Metadata & {context: string} {
     const row = this.db.prepare("SELECT s.*,COALESCE((SELECT group_concat(p.text,' ') FROM post_sources ps JOIN posts p ON p.connector=ps.connector AND p.id=ps.post_id WHERE ps.source_id=s.id),'') context FROM sources s WHERE s.id=?").get(id) as Row | undefined;
@@ -182,7 +247,7 @@ export class Store {
     return Math.max(-8,Math.min(8,Number(row.boost || 0)*2));
   }
   stats(): Row {
-    const counts = this.db.prepare("SELECT (SELECT count(*) FROM posts) posts,(SELECT count(*) FROM posts p WHERE p.images_json != '[]' AND NOT EXISTS (SELECT 1 FROM post_sources ps WHERE ps.connector=p.connector AND ps.post_id=p.id)) visuals,(SELECT count(*) FROM sources) sources,(SELECT count(*) FROM post_sources) links,(SELECT count(*) FROM sources WHERE status='high_quality') high_quality,(SELECT count(*) FROM sources WHERE status='needs_review') needs_review,(SELECT count(*) FROM sources WHERE status='approved') approved,(SELECT count(*) FROM errors) errors").get() as Row;
+    const counts = this.db.prepare("SELECT (SELECT count(*) FROM posts) posts,(SELECT count(*) FROM posts p WHERE p.images_json != '[]' AND NOT EXISTS (SELECT 1 FROM post_sources ps WHERE ps.connector=p.connector AND ps.post_id=p.id)) visuals,(SELECT count(*) FROM sources) sources,(SELECT count(*) FROM post_sources) links,(SELECT count(*) FROM sources WHERE status='high_quality') high_quality,(SELECT count(*) FROM sources WHERE status='needs_review') needs_review,(SELECT count(*) FROM sources WHERE status='approved') approved,(SELECT count(*) FROM errors) errors,(SELECT count(*) FROM enrichment_attempts WHERE attempts>=3) metadata_backoff_exhausted").get() as Row;
     const run = this.db.prepare("SELECT id,connector,started_at,ended_at,status,posts_seen,sources_new,duplicates FROM runs ORDER BY started_at DESC LIMIT 1").get() || null;
     return {...counts,lastRun:run,checkpoint:this.db.prepare("SELECT * FROM checkpoints ORDER BY updated_at DESC LIMIT 1").get() || null};
   }
