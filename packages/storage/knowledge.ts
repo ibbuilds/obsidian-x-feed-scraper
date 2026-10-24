@@ -464,7 +464,7 @@ export class KnowledgeStore extends Store {
       "FROM kb_mentions m JOIN kb_observations o ON "+
       "o.project_id=m.project_id AND o.connection_id=m.connection_id AND o.item_id=m.item_id "+
       "WHERE m.project_id=? AND m.entity_key=? "+
-      "ORDER BY o.last_seen DESC,m.connection_id,m.item_id LIMIT 50"
+      "ORDER BY o.last_seen DESC LIMIT 50"
     ).all(projectId,key) as Row[]).map(row=>{
       const original=json<Observation|undefined>(row.observation_json,undefined);
       return {connectionId:row.connection_id,itemId:row.item_id,type:row.type,
@@ -490,72 +490,6 @@ export class KnowledgeStore extends Store {
       date:row.recorded_at
     }));
     return {entity,mentions,reviews,assessments};
-  }
-  /**
-   * Read provenance for one bounded export page in three indexed queries,
-   * avoiding the four-per-entity N+1 lookup pattern of individual evidence
-   * requests. Returns exactly the same shapes and per-entity 50/30/30 caps
-   * as entityEvidence(). Only callers with pre-fetched entities use this.
-   */
-  entityProvenanceBatch(projectId:string,keys:readonly string[]):Map<string,{
-    mentions:Array<Record<string,unknown>>;
-    reviews:Array<Record<string,unknown>>;
-    assessments:Array<Record<string,unknown>>;
-  }>{
-    if(keys.length>500)throw new Error("Provenance batch limit exceeded");
-    const result=new Map<string,{mentions:Array<Record<string,unknown>>;
-      reviews:Array<Record<string,unknown>>;assessments:Array<Record<string,unknown>>}>();
-    for(const key of keys)result.set(key,{mentions:[],reviews:[],assessments:[]});
-    if(!result.size)return result;
-    const selected=JSON.stringify([...result.keys()]);
-    const mentions=this.prepareCached(
-      "SELECT entity_key,connection_id,item_id,type,title,url,occurred_at,"+
-      "evidence_json,observation_json,active,first_seen,last_seen FROM ("+
-        "SELECT m.entity_key,m.connection_id,m.item_id,o.type,o.title,o.url,o.occurred_at,"+
-        "m.evidence_json,m.observation_json,m.active,o.first_seen,o.last_seen,"+
-        "ROW_NUMBER() OVER (PARTITION BY m.entity_key ORDER BY o.last_seen DESC,m.connection_id,m.item_id) rank "+
-        "FROM kb_mentions m JOIN kb_observations o ON "+
-        "o.project_id=m.project_id AND o.connection_id=m.connection_id AND o.item_id=m.item_id "+
-        "WHERE m.project_id=? AND m.entity_key IN (SELECT value FROM json_each(?))"+
-      ") WHERE rank<=50 ORDER BY entity_key,rank"
-    ).all(projectId,selected) as Row[];
-    for(const row of mentions){
-      const entry=result.get(String(row.entity_key));
-      if(!entry)continue;
-      const original=json<Observation|undefined>(row.observation_json,undefined);
-      entry.mentions.push({connectionId:row.connection_id,itemId:row.item_id,type:row.type,
-        title:original?original.title??null:row.title,
-        url:original?original.url??null:row.url,
-        occurredAt:original?original.occurredAt??null:row.occurred_at,
-        firstSeen:row.first_seen,lastSeen:row.last_seen,active:Boolean(row.active),
-        evidence:json(row.evidence_json,[])});
-    }
-    const reviews=this.prepareCached(
-      "SELECT entity_key,decision,reason,reviewed_at FROM ("+
-        "SELECT r.entity_key,r.decision,r.reason,r.reviewed_at,"+
-        "ROW_NUMBER() OVER (PARTITION BY r.entity_key ORDER BY r.id DESC) rank "+
-        "FROM kb_reviews r WHERE r.project_id=? "+
-        "AND r.entity_key IN (SELECT value FROM json_each(?))"+
-      ") WHERE rank<=30 ORDER BY entity_key,rank"
-    ).all(projectId,selected) as Row[];
-    for(const row of reviews)result.get(String(row.entity_key))?.reviews.push({
-      decision:row.decision,reason:row.reason,date:row.reviewed_at
-    });
-    const assessments=this.prepareCached(
-      "SELECT entity_key,category,score,confidence,reasons_json,evaluator_id,recorded_at FROM ("+
-        "SELECT h.entity_key,h.category,h.score,h.confidence,h.reasons_json,"+
-        "h.evaluator_id,h.recorded_at,"+
-        "ROW_NUMBER() OVER (PARTITION BY h.entity_key ORDER BY h.id DESC) rank "+
-        "FROM kb_assessment_history h WHERE h.project_id=? "+
-        "AND h.entity_key IN (SELECT value FROM json_each(?))"+
-      ") WHERE rank<=30 ORDER BY entity_key,rank"
-    ).all(projectId,selected) as Row[];
-    for(const row of assessments)result.get(String(row.entity_key))?.assessments.push({
-      category:row.category,score:row.score,confidence:row.confidence,
-      reasons:json(row.reasons_json,[]),evaluatorId:row.evaluator_id,
-      date:row.recorded_at
-    });
-    return result;
   }
   listObservations(projectId:string,limit=100):Row[]{
     return this.prepareCached(
