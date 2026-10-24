@@ -7,6 +7,7 @@ on:
       - "scripts/bench-engine.mjs"
       - "scripts/bench-repeat.mjs"
       - "scripts/bench-export.mjs"
+      - "scripts/bench-reprocess.mjs"
       - ".github/workflows/performance.yml"
   workflow_dispatch:
 permissions:
@@ -34,13 +35,14 @@ jobs:
           npm run build:cli --prefix baseline
       - name: Profile baseline on a clean SQLite database
         run: |
-          cp candidate/scripts/bench-engine.mjs candidate/scripts/bench-pagination.mjs candidate/scripts/bench-repeat.mjs candidate/scripts/bench-export.mjs baseline/scripts/
+          cp candidate/scripts/bench-engine.mjs candidate/scripts/bench-pagination.mjs candidate/scripts/bench-repeat.mjs candidate/scripts/bench-export.mjs candidate/scripts/bench-reprocess.mjs baseline/scripts/
           cd baseline
           node --experimental-strip-types scripts/bench-engine.mjs 1200 12000 > ../baseline-profile.json
           node --experimental-strip-types scripts/bench-pagination.mjs 6000 50 > ../baseline-pagination.json
           node --experimental-strip-types scripts/bench-repeat.mjs 1800 > ../baseline-repeat.json
           node --experimental-strip-types scripts/bench-export.mjs 1400 12 > ../baseline-export.json
           node --experimental-strip-types scripts/bench-export.mjs 3000 12 > ../baseline-large-export.json
+          node --experimental-strip-types scripts/bench-reprocess.mjs 2400 > ../baseline-reprocess.json
       - name: Profile candidate with identical synthetic data
         run: |
           cd candidate
@@ -49,6 +51,7 @@ jobs:
           node --experimental-strip-types scripts/bench-repeat.mjs 1800 > ../candidate-repeat.json
           node --experimental-strip-types scripts/bench-export.mjs 1400 12 > ../candidate-export.json
           node --experimental-strip-types scripts/bench-export.mjs 3000 12 > ../candidate-large-export.json
+          node --experimental-strip-types scripts/bench-reprocess.mjs 2400 > ../candidate-reprocess.json
       - name: Compare critical hot paths without source or network dependencies
         run: |
           node --input-type=module - <<'NODE'
@@ -112,6 +115,16 @@ jobs:
           if(newExport.times.compactMs>oldExport.times.compactMs*1.5){
             throw new Error('Compact export slowed by more than 50%');
           }
+          const oldReplay=JSON.parse(readFileSync('baseline-reprocess.json','utf8'));
+          const newReplay=JSON.parse(readFileSync('candidate-reprocess.json','utf8'));
+          for(const key of ['reprocessMs','repeatMs']){
+            const before=oldReplay.phases[key],after=newReplay.phases[key];
+            console.log('offline '+key+': baseline '+before+' ms, candidate '+after+
+              ' ms; ratio '+(after/Math.max(before,0.01)).toFixed(3));
+            if(after>=before*0.8){
+              throw new Error('Offline reassessment must improve by at least 20%: '+key);
+            }
+          }
           NODE
       - uses: actions/upload-artifact@v4
         if: always()
@@ -128,4 +141,6 @@ jobs:
             candidate-export.json
             baseline-large-export.json
             candidate-large-export.json
+            baseline-reprocess.json
+            candidate-reprocess.json
           retention-days: 30
