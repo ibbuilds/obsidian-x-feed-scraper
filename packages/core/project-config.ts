@@ -1,4 +1,5 @@
 import {readFileSync} from "node:fs";
+import {dirname,resolve} from "node:path";
 import type {JsonRecord,JsonValue,ProjectDefinition,Observation,EntityDraft,Assessment} from "../sdk/contracts.ts";
 import {normalizeUrl} from "./url.ts";
 
@@ -172,5 +173,13 @@ export function parseProject(raw:unknown):ProjectDefinition{
     }};
 }
 export function loadProject(file:string):ProjectDefinition{
-  return parseProject(JSON.parse(readFileSync(file,"utf8")) as unknown);
+  const path=resolve(file);
+  const project=parseProject(JSON.parse(readFileSync(path,"utf8")) as unknown);
+  // Local fixture paths are anchored to this manifest, not the process cwd.
+  for(const source of project.sources){
+    if(source.adapter==="json-file"&&typeof source.config.path==="string"){
+      source.config.path=resolve(dirname(path),source.config.path);
+    }
+  }
+  return project;
 }
