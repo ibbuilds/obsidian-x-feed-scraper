@@ -1,7 +1,7 @@
 import {createHash} from "node:crypto";
 import {join} from "node:path";
 import {ensureVaultPath} from "../core/vault-safe.ts";
-import {writeManagedNote} from "../core/managed-notes.ts";
+import {writeManagedNote,retireManagedNote} from "../core/managed-notes.ts";
 import {KnowledgeStore} from "../storage/knowledge.ts";
 import type {Extension,KnowledgeEntity,OutputAdapter,JsonRecord} from "../sdk/contracts.ts";
 
@@ -73,19 +73,23 @@ const markdown:OutputAdapter={
         ).all(project.id,entity.key) as Array<{connection_id:string;item_id:string;url:string|null}>;
         record(writeManagedNote(store,root,relative,md(entity,observed)),relative);
       }
-      // Superseded machine output can be retired, but user edits remain untouched.
+      // Retire notes that no longer pass the active project policy or were rejected.
+      // Only byte-for-byte verified machine output may be removed; annotated or
+      // unrelated vault notes are never deleted.
       const previous=store.db.prepare(
         "SELECT note_path FROM exported_notes WHERE vault_id=?"
       ).all(root) as Array<{note_path:string}>;
-      const prefix=join(folder,project.id)+"/";
+      const prefix=join(folder,project.id).replace(/\\/g,"/")+"/";
       for(const row of previous){
         const relative=row.note_path.replace(/\\/g,"/");
-        if(!relative.startsWith(prefix.replace(/\\/g,"/"))||wanted.has(row.note_path)||
+        if(!relative.startsWith(prefix)||wanted.has(row.note_path)||
           !/^[0-9a-f]{24}\.md$/.test(relative.slice(prefix.length)))continue;
-        const outcome=store.getExportHash(root,row.note_path);
-        if(!outcome)continue;
-        // Output cleanup is explicit and safe, never delete unknown files.
-        // Keep outdated generated records unless the user explicitly removes them.
+        const outcome=retireManagedNote(store,root,row.note_path);
+        if(outcome==="removed")result.removed++;
+        else if(outcome==="conflict"){
+          result.conflicts++;
+          if(result.conflictPaths.length<30)result.conflictPaths.push(row.note_path);
+        }
       }
       const relative=join(folder,project.id,"Knowledge.base");
       // Restrict the Base to this project's folder, not to other projects.
