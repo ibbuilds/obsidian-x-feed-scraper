@@ -19,8 +19,8 @@ If your MCP server only offers interactive search or detail tools, you must eith
 The repository includes a runnable synthetic server and project:
 
     npm ci
-    npm run cli -- project sync --project examples/mcp/project.json --db ./data/mcp-test.db
-    npm run cli -- project entities --id mcp-lab-research --db ./data/mcp-test.db
+    node --experimental-strip-types apps/collector/cli.ts project sync --project examples/mcp/project.json --db ./data/mcp-test.db
+    node --experimental-strip-types apps/collector/cli.ts project entities --id mcp-lab-research --db ./data/mcp-test.db
 
 Its source configuration is similar to:
 
