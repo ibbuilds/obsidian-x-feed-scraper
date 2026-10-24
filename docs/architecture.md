@@ -72,6 +72,25 @@ leave half-applied assessments; completed prior batches remain available for
 resume. Source observation versions, entity change events and human review
 records are never overwritten by offline reprocessing.
 
+## v0.13 comparison and memory optimization
+
+Canonical JSON equivalence now uses an order-insensitive structural comparison
+for object keys and an order-sensitive comparison for arrays, avoiding two
+temporary serialized JSON trees and repeated key sorting. Nested diff paths,
+array-as-atomic-change behavior and watch-rule guard comparisons remain
+unchanged. Automated differential tests compare the optimized comparator
+against the original canonical JSON representation.
+
+Keyword evaluation caches normalized terms per run and policy revision,
+including a snapshot of each term array. In-place edits are detected without
+re-serializing the policy before every entity, and invalid/malformed policy
+terms are still rejected.
+
+Offline reassessment incrementally steps through SQLite `kb_entities`
+using a cursor-backed prepared statement instead of retaining every row in
+a JavaScript array. Assessment commits still occur in atomic groups of 100;
+reprocessing never modifies immutable source observations or human reviews.
+
 ## Failure boundaries
 
 All pages are schema-checked before writing. Each source page, its resulting entities/mentions and its next cursor are committed as **one SQLite transaction**. A failed page never advances its cursor. Processing runs are recorded with success/failure, and separate project sources can continue independently.
