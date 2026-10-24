@@ -140,18 +140,21 @@ export class ProjectSetupModal extends Modal {
             (this.interval!==0&&this.interval<15)){
             throw new Error("Interval must be 0 or between 15 and 1440 minutes");
           }
-          let args:unknown;
-          try{args=JSON.parse(this.argsText);}catch{
-            throw new Error("MCP arguments must be a JSON array");
-          }
-          if(this.sourceType==="mcp-stdio"&&
-            (!Array.isArray(args)||args.some(x=>typeof x!=="string"))){
-            throw new Error("MCP arguments must be an array of strings");
-          }
+          let args:string[]=[];
           let mapping:unknown;
-          if(this.mappingText.trim()){
-            try{mapping=JSON.parse(this.mappingText);}catch{
-              throw new Error("MCP field mapping must be valid JSON");
+          if(this.sourceType==="mcp-stdio"){
+            let rawArgs:unknown;
+            try{rawArgs=JSON.parse(this.argsText);}catch{
+              throw new Error("MCP arguments must be a JSON array");
+            }
+            if(!Array.isArray(rawArgs)||rawArgs.some(x=>typeof x!=="string")){
+              throw new Error("MCP arguments must be an array of strings");
+            }
+            args=rawArgs as string[];
+            if(this.mappingText.trim()){
+              try{mapping=JSON.parse(this.mappingText);}catch{
+                throw new Error("MCP field mapping must be valid JSON");
+              }
             }
           }
           const id=projectId(this.name);
@@ -159,7 +162,7 @@ export class ProjectSetupModal extends Modal {
             id,name:this.name,
             sourceType:this.sourceType,sourceUrl:this.url,sourcePath:this.path,
             demoPath:this.sourceType==="demo"?this.host.projectDemoPath(id):undefined,
-            mcpCommand:this.command,mcpArgs:args as string[],
+            mcpCommand:this.command,mcpArgs:args,
             mcpTool:this.tool,mcpMapping:mapping,
             includeKeywords:this.positive,excludeKeywords:this.negative,
             mode:this.mode,publicMetadata:this.metadata,
