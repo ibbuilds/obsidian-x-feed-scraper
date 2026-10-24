@@ -30,7 +30,7 @@ const HELP=[
   "  sources [--status needs_review] [--search motion] | posts | status | history",
   "  enrich --limit 10 | export --vault /vault | recommendations | report",
   "  review --id 1 --decision approved --reason 'Useful source'",
-  "  Options: --db FILE --profile JSON --threshold 75 --confidence 0.65 --prefer-free true",
+  "  Options: --db FILE --profile JSON --threshold 75 --confidence 0.65 --prefer-free true --auto-enrich true",
   "Personalized X For You feed is NOT accessible via the existing connectors."
 ].join("\n");
 async function main():Promise<void>{
@@ -61,7 +61,8 @@ async function main():Promise<void>{
     const posts=feed?await fetchRSS(feed):readFixture(resolve(fixture!));
     const connector=feed?"rss:"+createHash("sha256").update(feed).digest("hex").slice(0,16):"fixture";
     const result=ingest(db,posts,profile,connector,refs());
-    show({result,export:vault?exportToVault(db,vault):null});
+    const analysis=option("auto-enrich")==="true"?await enrich(db,profile,refs(),10,false):null;
+    show({result,analysis,export:vault?exportToVault(db,vault):null});
   }else if(command==="enrich"){
     show(await enrich(db,profile,refs(),Number(option("limit")||10)));
     if(vault)show({export:exportToVault(db,vault)});
@@ -71,7 +72,8 @@ async function main():Promise<void>{
   }else if(command==="serve"){
     const port=Number(option("port")??47321),intervalMinutes=Number(option("interval")??0);
     const server=startServer({db,profile,feed,fixture,vault,references:refsPath,
-      token:process.env.XFS_API_TOKEN||"",port,intervalMinutes});
+      token:process.env.XFS_API_TOKEN||"",port,intervalMinutes,
+      autoEnrich:option("auto-enrich")==="true"});
     server.on("listening",()=>{
       const address=server.address();
       const actual=address&&typeof address!=="string"?address.port:port;
