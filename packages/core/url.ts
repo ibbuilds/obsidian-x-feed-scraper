@@ -2,7 +2,7 @@ import {isIP} from "node:net";
 import type {Post} from "./types.ts";
 
 const DROP = new Set(["fbclid", "gclid", "dclid", "igshid", "mc_cid", "mc_eid", "ref_src", "ref_url", "si"]);
-const X_HOSTS = new Set(["x.com", "www.x.com", "twitter.com", "www.twitter.com"]);
+const X_DOMAINS = ["x.com","twitter.com"] as const;
 const SECRET_QUERY_KEY = /(?:^|[_-])(?:token|accesskey|apikey|api[_-]?key|key|secret|password|passwd|pwd|session|sessionid|auth|authorization|jwt|signature|sig|cookie)(?:$|[_-])/i;
 
 export function normalizeUrl(value: string): string {
@@ -24,8 +24,10 @@ export function normalizeUrl(value: string): string {
 }
 
 export function isXUrl(raw: string): boolean {
-  try { return X_HOSTS.has(new URL(raw).hostname.toLowerCase()); }
-  catch { return false; }
+  try {
+    const host=new URL(raw).hostname.toLowerCase().replace(/\.$/,"");
+    return X_DOMAINS.some(domain=>host===domain||host.endsWith("."+domain));
+  }catch{return false;}
 }
 
 export function extractUrls(post: Post): string[] {
