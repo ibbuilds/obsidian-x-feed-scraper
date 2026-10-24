@@ -77,11 +77,11 @@ export function parseProductPage(html:string,requestedUrl:string):Observation{
   const url=normalizeUrl(requestedUrl);
   const candidates=jsonLdObjects(html);
   if(!candidates.length)throw new Error("No Schema.org Product data found");
-  const offers=candidates.map(product=>({product,offer:offerOf(product)}))
-    .filter(item=>item.offer!==undefined);
-  if(offers.length!==1)throw new Error("Page has no single unambiguous product offer");
-  const {product,offer:offerMaybe}=offers[0];
-  const offer=offerMaybe!;
+  // An unsupported product must not disappear from the ambiguity check:
+  // otherwise a recommendation can be mistaken for the page's main product.
+  if(candidates.length!==1)throw new Error("Page has no single unambiguous product offer");
+  const product=candidates[0],offer=offerOf(product);
+  if(!offer)throw new Error("Page has no single unambiguous product offer");
   const priceSpec=obj(offer.priceSpecification);
   const price=number(offer.price??priceSpec?.price);
   const currency=text(offer.priceCurrency??priceSpec?.priceCurrency,4);

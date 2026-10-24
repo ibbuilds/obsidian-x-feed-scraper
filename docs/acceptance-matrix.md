@@ -10,6 +10,7 @@ CI verification refers to the automated GitHub Actions tests, not the user's per
 | Custom entity schemas | Implemented and tested | Typed JSON fields + validation; security/ticket/research examples |
 | Project-specific evaluations and reviews | Implemented and tested | Separate project IDs prevent cross-project scoring/review contamination |
 | Resumable incremental collection | Implemented and tested | Stable IDs, durable cursors, atomic per-page persistence, failed-page replay |
+| Execution cache isolation and cancellation | Implemented and tested | Reusing a caller signal reloads snapshots between runs, isolates projects, preserves reviews and prevents a late page from committing after cancellation |
 | Source configuration changes | Implemented and tested | Config fingerprints prevent reusing checkpoints for a different dataset |
 | Offline re-evaluation | Implemented and tested | Reprocess stored observations without calling sources or losing manual approval |
 | Relationship/provenance storage | Implemented and tested | SQLite `kb_mentions` and observation count, evidence JSON |
@@ -23,6 +24,7 @@ CI verification refers to the automated GitHub Actions tests, not the user's per
 | Immutable revisions and field change log | Implemented and tested | Repeated identical snapshots produce no duplicates; changed fields record old/new values and source identity |
 | Configurable change watches | Implemented and tested | New records, changed values, percent drop/rise, equality; unchanged-currency guard |
 | Product price monitor | Implemented with deterministic tests | Public Schema.org Product/Offer structured-data adapter and local price-drop scenario; real merchant support varies |
+| Public source identity and transport | Implemented with deterministic tests | Multiple recognized Products are rejected before selecting an Offer; HTTPS redirects cannot downgrade to HTTP; DNS/private-address checks still apply |
 | Job opportunities monitor | Implemented with deterministic tests | Generic HTTPS JSON API mapping, public Greenhouse example template and synthetic job status/location changes; cannot infer closure from absence |
 | External notifications | Not implemented | Alerts are local SQLite/UI/CLI records, not email/SMS/push notifications |
 | MCP interoperability | Tested with synthetic servers | Modern 2026-07-28 and legacy stdio, explicit selected tools, declarative provider JSON mapping, timeouts and secret scoping |
@@ -41,6 +43,15 @@ CI verification refers to the automated GitHub Actions tests, not the user's per
 7. No generic project appends to root References.md.
 8. The real Obsidian Desktop app can load an independent non-X project and produce notes in an isolated vault.
 9. Linux/macOS/Windows typecheck, build and test, dependency audit and release packaging succeed.
+10. A caller can reuse one cancellation signal without reusing another run's snapshot or another project's records. Cancelled pages leave observations, versions, alerts and cursors unchanged.
+11. A product page containing an ambiguous primary product and a simpler accessory fails instead of recording the accessory's price under the requested product URL.
+12. Public HTTP tests simulate redirects without external requests: HTTPS-to-HTTP is rejected, HTTPS redirects still work, private destinations remain blocked, and explicitly configured HTTP sources retain their existing support.
+
+Source integrity regressions are covered in `tests/monitoring-run-isolation.test.ts` and `tests/public-source-integrity.test.ts`. These cases extend the automated acceptance suite; they do not establish real-merchant compatibility or owner-device acceptance.
+
+## Domain curation acceptance
+
+See [verifiable curation criteria](profiles.md#verifiable-curation-criteria) for identity, evidence, false positives, licenses and human decisions. These criteria distinguish current core guarantees from quality claims that require a labeled domain dataset or manual verification. Passing engine tests is not a measured precision score for real sources.
 
 ## Honest limitations
 

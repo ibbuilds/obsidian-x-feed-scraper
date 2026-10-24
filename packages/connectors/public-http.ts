@@ -9,13 +9,16 @@ export async function fetchPublicText(input:string, options:{
   accept:string;types:readonly string[];maxBytes?:number;redirects?:number
 }):Promise<{url:string;body:string;contentType:string}> {
   const maxBytes=Math.min(1_000_000,Math.max(1024,options.maxBytes??300_000));
-  async function step(inputUrl:string,remaining:number):Promise<{url:string;body:string;contentType:string}> {
+  async function step(inputUrl:string,remaining:number,requireHttps=false):Promise<{url:string;body:string;contentType:string}> {
     if(remaining<0) throw new Error("Too many redirects");
     const canonical=normalizeUrl(inputUrl);
     if(isXUrl(canonical)||new URL(canonical).hostname==="t.co"){
       throw new Error("Automated retrieval from X is not supported");
     }
     const parsed=new URL(canonical);
+    if(requireHttps&&parsed.protocol!=="https:"){
+      throw new Error("HTTPS redirects cannot downgrade to HTTP");
+    }
     const host=safeHostname(canonical);
     const addresses=isIP(host) ? [{address:host,family:isIP(host)}] : await lookup(host,{all:true});
     if(!addresses.length || addresses.some(x=>isLocalOrUnsafeAddress(x.address))) {
@@ -39,7 +42,8 @@ export async function fetchPublicText(input:string, options:{
         if(status>=300 && status<400 && res.headers.location){
           res.resume();
           const next=new URL(res.headers.location,parsed).toString();
-          step(next,remaining-1).then(value=>{if(!settled){settled=true;resolve(value);}},fail);
+          step(next,remaining-1,parsed.protocol==="https:")
+            .then(value=>{if(!settled){settled=true;resolve(value);}},fail);
           return;
         }
         const type=String(res.headers["content-type"]||"").toLowerCase().split(";")[0].trim();

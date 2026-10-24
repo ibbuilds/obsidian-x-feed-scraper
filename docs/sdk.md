@@ -44,6 +44,8 @@ Every item from `SourceAdapter.collect` must have `{id:string,type:string}`. Opt
 
 The source adapter owns permissions, authentication, paging and rate limiting. The engine validates each page's size and data, and commits the page and the new opaque cursor in one SQLite transaction. On a failed page, no checkpoint advancement occurs. Stable IDs are scoped to each project connection.
 
+`runProject(..., {signal})` accepts a caller's cancellation signal. Each invocation passes a fresh, linked signal to its adapters, processors and evaluator, so built-in caches last for that execution only. Reusing a caller's signal across projects or scheduled runs does not reuse source data. Adapters should still stop promptly on cancellation; the engine also checks cancellation immediately before committing a page, preserving earlier committed pages while discarding a late result.
+
 An observation does **not** need a URL, and can represent a scientific record, event, ticket, code issue, image reference or anything else a custom processor understands.
 
 ## Entity processors
@@ -51,6 +53,8 @@ An observation does **not** need a URL, and can represent a scientific record, e
 A processor receives its project and source context, one validated observation, and the previously accumulated entity list. It returns candidate entities with `key`, `type`, `title`, optional canonical `url`, JSON `attributes` and optional `evidence` signals.
 
 Multiple observations may refer to the same entity, deduplicated by project and entity key. Per-project optional schemas validate typed fields. Processor pipelines are ordered by the project manifest. The engine sets explicit page and result bounds.
+
+Observation IDs are connection-scoped, but **entity keys must be unique across the project**. The built-in `observation-entity` processor currently uses `type:id`, without adding the connection ID. When providers have overlapping local IDs, use separate projects or a custom processor that includes a stable provider/board namespace in its entity key. The public JSON/MCP mapping does not currently add an ID prefix. Changing an existing entity key requires a migration plan because reviews and history belong to that key.
 
 ## Evaluators
 
