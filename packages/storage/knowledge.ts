@@ -39,6 +39,7 @@ export class KnowledgeStore extends Store {
       "CREATE TABLE IF NOT EXISTS kb_entities (project_id TEXT NOT NULL REFERENCES kb_projects(id),entity_key TEXT NOT NULL,type TEXT NOT NULL,title TEXT NOT NULL,url TEXT,attributes_json TEXT NOT NULL,created_at TEXT NOT NULL,updated_at TEXT NOT NULL,PRIMARY KEY(project_id,entity_key));" +
       "CREATE TABLE IF NOT EXISTS kb_mentions (project_id TEXT NOT NULL,connection_id TEXT NOT NULL,item_id TEXT NOT NULL,entity_key TEXT NOT NULL,evidence_json TEXT NOT NULL,PRIMARY KEY(project_id,connection_id,item_id,entity_key),FOREIGN KEY(project_id,connection_id,item_id) REFERENCES kb_observations(project_id,connection_id,item_id),FOREIGN KEY(project_id,entity_key) REFERENCES kb_entities(project_id,entity_key));" +
       "CREATE TABLE IF NOT EXISTS kb_assessments (project_id TEXT NOT NULL,entity_key TEXT NOT NULL,category TEXT NOT NULL,score INTEGER NOT NULL,confidence REAL NOT NULL,reasons_json TEXT NOT NULL,evaluator_id TEXT NOT NULL,updated_at TEXT NOT NULL,PRIMARY KEY(project_id,entity_key),FOREIGN KEY(project_id,entity_key) REFERENCES kb_entities(project_id,entity_key));" +
+      "CREATE TABLE IF NOT EXISTS kb_assessment_history (id INTEGER PRIMARY KEY,project_id TEXT NOT NULL,entity_key TEXT NOT NULL,category TEXT NOT NULL,score INTEGER NOT NULL,confidence REAL NOT NULL,reasons_json TEXT NOT NULL,evaluator_id TEXT NOT NULL,recorded_at TEXT NOT NULL,FOREIGN KEY(project_id,entity_key) REFERENCES kb_entities(project_id,entity_key));" +
       "CREATE TABLE IF NOT EXISTS kb_reviews (id INTEGER PRIMARY KEY,project_id TEXT NOT NULL,entity_key TEXT NOT NULL,decision TEXT NOT NULL,reason TEXT NOT NULL,reviewed_at TEXT NOT NULL,legacy_review_id INTEGER UNIQUE,FOREIGN KEY(project_id,entity_key) REFERENCES kb_entities(project_id,entity_key));" +
       "CREATE TABLE IF NOT EXISTS kb_runs (id TEXT PRIMARY KEY,project_id TEXT NOT NULL,connection_id TEXT,status TEXT NOT NULL,started_at TEXT NOT NULL,ended_at TEXT,observations INTEGER NOT NULL DEFAULT 0,new_entities INTEGER NOT NULL DEFAULT 0,duplicates INTEGER NOT NULL DEFAULT 0,error TEXT);" +
       "CREATE TABLE IF NOT EXISTS kb_checkpoints (project_id TEXT NOT NULL,connection_id TEXT NOT NULL,cursor TEXT,updated_at TEXT NOT NULL,PRIMARY KEY(project_id,connection_id));" +
@@ -123,7 +124,7 @@ export class KnowledgeStore extends Store {
   }
   saveBatch(projectId:string,source:ProjectSource,items:Array<{
     observation:Observation;entities:Array<{draft:EntityDraft;assessment:Assessment}>;
-  }>,nextCursor:string|undefined):{observations:number;newEntities:number;duplicates:number}{
+  }>,nextCursor:string|undefined,evaluatorId:string):{observations:number;newEntities:number;duplicates:number}{
     const count={observations:0,newEntities:0,duplicates:0};
     const date=now();
     this.db.exec("BEGIN IMMEDIATE");
@@ -171,6 +172,12 @@ export class KnowledgeStore extends Store {
             "INSERT INTO kb_mentions(project_id,connection_id,item_id,entity_key,evidence_json) VALUES(?,?,?,?,?) "+
             "ON CONFLICT(project_id,connection_id,item_id,entity_key) DO UPDATE SET evidence_json=excluded.evidence_json"
           ).run(projectId,source.id,observation.id,draft.key,JSON.stringify(draft.evidence||[]));
+          const previousAssessment=this.db.prepare(
+            "SELECT category,score,confidence,reasons_json,evaluator_id FROM kb_assessments "+
+            "WHERE project_id=? AND entity_key=?"
+          ).get(projectId,draft.key) as {category:string;score:number;confidence:number;
+            reasons_json:string;evaluator_id:string}|undefined;
+          const reasons=JSON.stringify(assessment.reasons);
           // Prefer strongest evidence when several observations refer to one entity.
           this.db.prepare(
             "INSERT INTO kb_assessments(project_id,entity_key,category,score,confidence,reasons_json,evaluator_id,updated_at) "+
@@ -180,7 +187,23 @@ export class KnowledgeStore extends Store {
             "reasons_json=CASE WHEN excluded.score>=score THEN excluded.reasons_json ELSE reasons_json END,"+
             "evaluator_id=excluded.evaluator_id,updated_at=excluded.updated_at"
           ).run(projectId,draft.key,assessment.category,assessment.score,assessment.confidence,
-            JSON.stringify(assessment.reasons),source.adapter,date);
+            reasons,evaluatorId,date);
+          const updatedAssessment=this.db.prepare(
+            "SELECT category,score,confidence,reasons_json,evaluator_id FROM kb_assessments "+
+            "WHERE project_id=? AND entity_key=?"
+          ).get(projectId,draft.key) as {category:string;score:number;confidence:number;
+            reasons_json:string;evaluator_id:string};
+          if(!previousAssessment||
+            Object.keys(updatedAssessment).some(key=>
+              updatedAssessment[key as keyof typeof updatedAssessment] !==
+              previousAssessment[key as keyof typeof previousAssessment])){
+            this.db.prepare(
+              "INSERT INTO kb_assessment_history(project_id,entity_key,category,score,confidence,reasons_json,evaluator_id,recorded_at) "+
+              "VALUES(?,?,?,?,?,?,?,?)"
+            ).run(projectId,draft.key,updatedAssessment.category,updatedAssessment.score,
+              updatedAssessment.confidence,updatedAssessment.reasons_json,
+              updatedAssessment.evaluator_id,date);
+          }
         }
       }
       this.db.prepare(
@@ -252,11 +275,28 @@ export class KnowledgeStore extends Store {
     }finally{release();}
   }
   updateAssessment(projectId:string,key:string,value:Assessment,evaluator:string):void{
-    this.db.prepare(
-      "UPDATE kb_assessments SET category=?,score=?,confidence=?,reasons_json=?,evaluator_id=?,updated_at=? "+
+    const previous=this.db.prepare(
+      "SELECT category,score,confidence,reasons_json,evaluator_id FROM kb_assessments "+
       "WHERE project_id=? AND entity_key=?"
-    ).run(value.category,value.score,value.confidence,JSON.stringify(value.reasons),
-      evaluator,now(),projectId,key);
+    ).get(projectId,key) as {category:string;score:number;confidence:number;
+      reasons_json:string;evaluator_id:string}|undefined;
+    const reasons=JSON.stringify(value.reasons),date=now();
+    this.db.exec("BEGIN IMMEDIATE");
+    try{
+      this.db.prepare(
+        "UPDATE kb_assessments SET category=?,score=?,confidence=?,reasons_json=?,evaluator_id=?,updated_at=? "+
+        "WHERE project_id=? AND entity_key=?"
+      ).run(value.category,value.score,value.confidence,reasons,evaluator,date,projectId,key);
+      if(!previous||previous.category!==value.category||previous.score!==value.score||
+        previous.confidence!==value.confidence||previous.reasons_json!==reasons||
+        previous.evaluator_id!==evaluator){
+        this.db.prepare(
+          "INSERT INTO kb_assessment_history(project_id,entity_key,category,score,confidence,reasons_json,evaluator_id,recorded_at) "+
+          "VALUES(?,?,?,?,?,?,?,?)"
+        ).run(projectId,key,value.category,value.score,value.confidence,reasons,evaluator,date);
+      }
+      this.db.exec("COMMIT");
+    }catch(error){this.db.exec("ROLLBACK");throw error;}
   }
   /**
    * Import the v0.4.0 database in place. The old schema remains intact and all
