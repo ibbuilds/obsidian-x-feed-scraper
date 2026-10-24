@@ -9,6 +9,9 @@ import {runProject,reprocessProject} from "../packages/core/engine.ts";
 import {KnowledgeStore} from "../packages/storage/knowledge.ts";
 import {diffSnapshots,snapshot,matchingRules,sameJson} from "../packages/core/change-tracking.ts";
 import {parseProductPage} from "../packages/adapters/product-jsonld.ts";
+import {ingest} from "../packages/core/pipeline.ts";
+import {readFixture} from "../packages/connectors/fixtures.ts";
+import {loadProfile} from "../packages/core/profile.ts";
 
 const registered=createDefaultRegistry();
 function setup(type:"price-monitor"|"job-radar"){
@@ -207,4 +210,24 @@ test("a changing snapshot mid-pagination restarts safely instead of skipping ear
   assert.equal(finish.success,true);
   assert.equal(finish.newEntities,1);
  }finally{rmSync(ctx.root,{recursive:true,force:true});}
+});
+
+test("legacy records arriving after first generic initialization receive historical baselines",()=>{
+ const dir=mkdtempSync(join(tmpdir(),"discovery-late-legacy-")),db=join(dir,"library.sqlite");
+ try{
+  const initial=new KnowledgeStore(db);
+  initial.close();
+  ingest(db,readFixture("./tests/fixtures/posts.json"),loadProfile("./profiles/design.json"));
+  const migrated=new KnowledgeStore(db);
+  const entries=migrated.listEntities("legacy-x-feed");
+  assert.equal(entries.length,3);
+  const resource=entries.find(x=>x.url?.includes("github.com"))!;
+  assert.ok(resource);
+  const baseline=migrated.listVersions("legacy-x-feed",resource.key);
+  assert.equal(baseline.length,1);
+  assert.equal(baseline[0].snapshot.title,resource.title);
+  assert.equal(migrated.listChanges("legacy-x-feed").length,0,
+    "Legacy import must not manufacture synthetic change alerts");
+  migrated.close();
+ }finally{rmSync(dir,{recursive:true,force:true});}
 });
