@@ -31,6 +31,9 @@ export async function projectCommand(args:string[]):Promise<void>{
     "  project entities --id frontend-discovery --db ./data/library.db [--limit 100 --offset 0]",
     "  project review --id frontend-discovery --key <entity-key> --decision approved --reason useful",
     "  project reprocess --project FILE --db FILE (no network requests)",
+    "  project changes --id PROJECT [--limit 50 --offset 0]",
+    "  project alerts --id PROJECT [--limit 50]",
+    "  project versions --id PROJECT --key ENTITY_KEY [--limit 50]",
     "  project export --project FILE --db FILE [--vault /your/vault]",
     "  project reset-cursor --id PROJECT --connection CONNECTION --db FILE",
     "  Options: --extension /trusted/local/plugin.cjs --page-size 100 --max-pages 100"
@@ -61,6 +64,21 @@ export async function projectCommand(args:string[]):Promise<void>{
       limit:number(args,"limit",100),offset:number(args,"offset",0),
       type:opt(args,"type"),q:opt(args,"search")
     }));}finally{store.close();}
+  }else if(action==="changes"){
+    const store=new KnowledgeStore(db);
+    try{output(store.listChanges(required(args,"id"),{
+      limit:number(args,"limit",100),offset:number(args,"offset",0),
+      entityKey:opt(args,"key")
+    }));}finally{store.close();}
+  }else if(action==="alerts"){
+    const store=new KnowledgeStore(db);
+    try{output(store.listAlerts(required(args,"id"),number(args,"limit",100)));}
+    finally{store.close();}
+  }else if(action==="versions"){
+    const store=new KnowledgeStore(db);
+    try{output(store.listVersions(required(args,"id"),required(args,"key"),
+      number(args,"limit",50)));}
+    finally{store.close();}
   }else if(action==="review"){
     const store=new KnowledgeStore(db);
     try{
