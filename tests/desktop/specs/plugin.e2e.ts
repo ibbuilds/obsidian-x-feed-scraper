@@ -190,7 +190,7 @@ describe("X Feed Scraper in actual Obsidian Desktop",function(){
           running:instance?.bridge.running,error:instance?.bridge.lastError};
       });
       throw new Error("Offline demo did not appear. Panel: "+content.slice(0,1800)+
-        ". Notices: "+JSON.stringify(notices)+
+        ". Modal: "+modalInfo.slice(0,800)+". Notices: "+JSON.stringify(notices)+
         ". State: "+JSON.stringify(state)+". "+String(error));
     }
     const evidence=browser.$("//summary[normalize-space()='Sources, evidence and review history']");
