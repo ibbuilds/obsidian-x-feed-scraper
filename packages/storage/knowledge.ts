@@ -63,13 +63,13 @@ export class KnowledgeStore extends Store {
     if(!columns.some(col=>col.name==="config_hash")){
       this.db.exec("ALTER TABLE kb_connections ADD COLUMN config_hash TEXT NOT NULL DEFAULT ''");
     }
-    this.migrateLegacy();
+    const legacy=this.migrateLegacy();
     // Baselines for pre-v0.8 libraries. These are NOT synthetic change alerts:
     // previous records are simply recorded as the initial known state.
     const done=this.db.prepare(
       "SELECT fingerprint FROM kb_migration_state WHERE name='entity-baselines-v0.8'"
     ).get() as {fingerprint:string}|undefined;
-    if(!done){
+    if(!done||legacy.entities>0){
       this.db.exec("BEGIN IMMEDIATE");
       try{
         this.db.prepare(
