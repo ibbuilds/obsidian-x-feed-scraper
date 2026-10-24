@@ -8,6 +8,7 @@ import {createDefaultRegistry} from "../packages/core/extensions.ts";
 import {parseProject,loadProject} from "../packages/core/project-config.ts";
 import {runProject} from "../packages/core/engine.ts";
 import {KnowledgeStore} from "../packages/storage/knowledge.ts";
+import {parseMcpMapping} from "../packages/adapters/mcp-mapping.ts";
 
 const fixture=resolve("tests/fixtures/mock-mcp-server.cjs");
 function project(tool="list_records",config:Record<string,unknown>={}){
@@ -147,4 +148,37 @@ test("automatic MCP era selection supports modern and legacy while strict modes 
   assert.equal(rejected.success,false);
   assert.match(rejected.runs[0].error||"",/modern discovery|protocol/);
  }finally{rmSync(dir,{recursive:true,force:true});}
+});
+
+test("declarative MCP field mapping turns provider-specific JSON into typed knowledge",async()=>{
+ const dir=mkdtempSync(join(tmpdir(),"knowledge-mcp-mapping-")),db=join(dir,"library.sqlite");
+ try{
+  const definition=project("provider_records",{mapping:{
+    itemsPath:"data.rows",idPath:"recordId",type:"incident",
+    titlePath:"headline",textPath:"details",urlPath:"link",
+    hasMorePath:"data.paging.more",nextCursorPath:"data.paging.cursor",
+    attributes:{severity:"priority",provider:"source"}
+  }});
+  const result=await runProject(db,definition,createDefaultRegistry());
+  assert.equal(result.success,true,JSON.stringify(result.runs));
+  const store=new KnowledgeStore(db);
+  const incident=store.getEntity("mcp-lab","incident:112");
+  assert.ok(incident);
+  assert.equal(incident.title,"Infrastructure incident");
+  assert.equal(incident.attributes.severity,4);
+  assert.equal(incident.attributes.provider,"trusted-internal-mcp");
+  assert.equal(store.cursor("mcp-lab","mcp-lab-server"),"end-of-observations");
+  store.close();
+ }finally{rmSync(dir,{recursive:true,force:true});}
+});
+test("declarative maps reject prototype traversal and malformed path identifiers",()=>{
+ assert.throws(()=>parseMcpMapping({
+  itemsPath:"data.__proto__.rows",idPath:"id",type:"incident",
+  hasMorePath:"more",nextCursorPath:"cursor"
+ }),/Invalid MCP field path/);
+ assert.throws(()=>parseMcpMapping({
+  itemsPath:"rows",idPath:"id",type:"incident",
+  hasMorePath:"more",nextCursorPath:"cursor",
+  attributes:{"__proto__":"id"}
+ }),/Invalid MCP mapped attribute name|Invalid MCP/);
 });
