@@ -32,7 +32,7 @@ export class KnowledgeStore extends Store {
     super(file);
     this.db.exec(
       "CREATE TABLE IF NOT EXISTS kb_projects (id TEXT PRIMARY KEY,name TEXT NOT NULL,config_hash TEXT NOT NULL,created_at TEXT NOT NULL,updated_at TEXT NOT NULL);" +
-      "CREATE TABLE IF NOT EXISTS kb_connections (project_id TEXT NOT NULL REFERENCES kb_projects(id),connection_id TEXT NOT NULL,adapter_id TEXT NOT NULL,created_at TEXT NOT NULL,PRIMARY KEY(project_id,connection_id));" +
+      "CREATE TABLE IF NOT EXISTS kb_connections (project_id TEXT NOT NULL REFERENCES kb_projects(id),connection_id TEXT NOT NULL,adapter_id TEXT NOT NULL,config_hash TEXT NOT NULL DEFAULT '',created_at TEXT NOT NULL,PRIMARY KEY(project_id,connection_id));" +
       "CREATE TABLE IF NOT EXISTS kb_observations (project_id TEXT NOT NULL,connection_id TEXT NOT NULL,item_id TEXT NOT NULL,type TEXT NOT NULL,title TEXT,text TEXT,url TEXT,attributes_json TEXT NOT NULL,media_json TEXT NOT NULL,occurred_at TEXT,first_seen TEXT NOT NULL,last_seen TEXT NOT NULL,PRIMARY KEY(project_id,connection_id,item_id),FOREIGN KEY(project_id,connection_id) REFERENCES kb_connections(project_id,connection_id));" +
       "CREATE TABLE IF NOT EXISTS kb_entities (project_id TEXT NOT NULL REFERENCES kb_projects(id),entity_key TEXT NOT NULL,type TEXT NOT NULL,title TEXT NOT NULL,url TEXT,attributes_json TEXT NOT NULL,created_at TEXT NOT NULL,updated_at TEXT NOT NULL,PRIMARY KEY(project_id,entity_key));" +
       "CREATE TABLE IF NOT EXISTS kb_mentions (project_id TEXT NOT NULL,connection_id TEXT NOT NULL,item_id TEXT NOT NULL,entity_key TEXT NOT NULL,evidence_json TEXT NOT NULL,PRIMARY KEY(project_id,connection_id,item_id,entity_key),FOREIGN KEY(project_id,connection_id,item_id) REFERENCES kb_observations(project_id,connection_id,item_id),FOREIGN KEY(project_id,entity_key) REFERENCES kb_entities(project_id,entity_key));" +
@@ -44,28 +44,45 @@ export class KnowledgeStore extends Store {
       "CREATE INDEX IF NOT EXISTS kb_mentions_entity ON kb_mentions(project_id,entity_key);" +
       "CREATE INDEX IF NOT EXISTS kb_assessments_score ON kb_assessments(project_id,score DESC);"
     );
+    const columns=this.db.prepare("PRAGMA table_info(kb_connections)").all() as Array<{name:string}>;
+    if(!columns.some(col=>col.name==="config_hash")){
+      this.db.exec("ALTER TABLE kb_connections ADD COLUMN config_hash TEXT NOT NULL DEFAULT ''");
+    }
     this.migrateLegacy();
   }
   saveProject(project:ProjectDefinition):void{
     const date=now();
     // Deliberately NEVER persist adapter config; it can contain credentials.
     const fingerprint=hash(JSON.stringify(project));
-    this.db.prepare(
-      "INSERT INTO kb_projects(id,name,config_hash,created_at,updated_at) VALUES(?,?,?,?,?) "+
-      "ON CONFLICT(id) DO UPDATE SET name=excluded.name,config_hash=excluded.config_hash,updated_at=excluded.updated_at"
-    ).run(project.id,project.name,fingerprint,date,date);
-    for(const source of project.sources)this.saveConnection(project.id,source);
+    this.db.exec("BEGIN IMMEDIATE");
+    try{
+      this.db.prepare(
+        "INSERT INTO kb_projects(id,name,config_hash,created_at,updated_at) VALUES(?,?,?,?,?) "+
+        "ON CONFLICT(id) DO UPDATE SET name=excluded.name,config_hash=excluded.config_hash,updated_at=excluded.updated_at"
+      ).run(project.id,project.name,fingerprint,date,date);
+      for(const source of project.sources)this.saveConnection(project.id,source);
+      this.db.exec("COMMIT");
+    }catch(error){this.db.exec("ROLLBACK");throw error;}
   }
   saveConnection(projectId:string,source:ProjectSource):void{
+    const fingerprint=hash(JSON.stringify(source.config));
     const existing=this.db.prepare(
-      "SELECT adapter_id FROM kb_connections WHERE project_id=? AND connection_id=?"
-    ).get(projectId,source.id) as {adapter_id:string}|undefined;
+      "SELECT adapter_id,config_hash FROM kb_connections WHERE project_id=? AND connection_id=?"
+    ).get(projectId,source.id) as {adapter_id:string;config_hash:string}|undefined;
     if(existing&&existing.adapter_id!==source.adapter){
       throw new Error("Connection "+source.id+" changed adapter; create a new connection ID");
     }
+    if(existing?.config_hash&&existing.config_hash!==fingerprint){
+      throw new Error("Connection "+source.id+" changed source configuration; choose a new connection ID");
+    }
     this.db.prepare(
-      "INSERT OR IGNORE INTO kb_connections(project_id,connection_id,adapter_id,created_at) VALUES(?,?,?,?)"
-    ).run(projectId,source.id,source.adapter,now());
+      "INSERT OR IGNORE INTO kb_connections(project_id,connection_id,adapter_id,config_hash,created_at) VALUES(?,?,?,?,?)"
+    ).run(projectId,source.id,source.adapter,fingerprint,now());
+    if(existing&&!existing.config_hash){
+      this.db.prepare(
+        "UPDATE kb_connections SET config_hash=? WHERE project_id=? AND connection_id=?"
+      ).run(fingerprint,projectId,source.id);
+    }
   }
   listProjects():Row[]{
     return this.db.prepare(
@@ -237,8 +254,8 @@ export class KnowledgeStore extends Store {
       for(const post of posts){
         const connectionId="legacy-"+hash(String(post.connector)).slice(0,20);
         this.db.prepare(
-          "INSERT OR IGNORE INTO kb_connections(project_id,connection_id,adapter_id,created_at) VALUES(?,?,?,?)"
-        ).run(legacyId,connectionId,"legacy",date);
+          "INSERT OR IGNORE INTO kb_connections(project_id,connection_id,adapter_id,config_hash,created_at) VALUES(?,?,?,?,?)"
+        ).run(legacyId,connectionId,"legacy",hash("legacy:"+String(post.connector)),date);
         const result=this.db.prepare(
           "INSERT OR IGNORE INTO kb_observations(project_id,connection_id,item_id,type,title,text,url,attributes_json,media_json,occurred_at,first_seen,last_seen) "+
           "VALUES(?,?,?,?,?,?,?,?,?,?,?,?)"
