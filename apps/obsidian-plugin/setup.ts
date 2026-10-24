@@ -6,6 +6,7 @@ import type {ProjectDefinition} from "../../packages/sdk/contracts.ts";
 export interface ProjectSetupHost {
   app:App;
   installResearchProject(project:ProjectDefinition,opts:{demo:boolean;intervalMinutes:number}):Promise<void>;
+  projectDemoPath(id:string):string;
 }
 function projectId(name:string):string{
   const normalized=name.toLowerCase().normalize("NFKD")
@@ -152,10 +153,11 @@ export class ProjectSetupModal extends Modal {
               throw new Error("MCP field mapping must be valid JSON");
             }
           }
+          const id=projectId(this.name);
           const project=buildProject({
-            id:projectId(this.name),name:this.name,
+            id,name:this.name,
             sourceType:this.sourceType,sourceUrl:this.url,sourcePath:this.path,
-            demoPath:this.sourceType==="demo"?"/synthetic-demo-placeholder.json":undefined,
+            demoPath:this.sourceType==="demo"?this.host.projectDemoPath(id):undefined,
             mcpCommand:this.command,mcpArgs:args as string[],
             mcpTool:this.tool,mcpMapping:mapping,
             includeKeywords:this.positive,excludeKeywords:this.negative,
