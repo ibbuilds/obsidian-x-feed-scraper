@@ -6,6 +6,7 @@ import {join,resolve} from "node:path";
 import {createHash} from "node:crypto";
 import {spawnSync} from "node:child_process";
 import {createDefaultRegistry} from "../packages/core/extensions.ts";
+import {createObsidianRegistry} from "../packages/integrations/obsidian-registry.ts";
 import {registry,registerExtension} from "../packages/core/registry.ts";
 import {loadProject,parseProject,validateEntity} from "../packages/core/project-config.ts";
 import {runProject,reprocessProject} from "../packages/core/engine.ts";
@@ -118,7 +119,7 @@ test("generic Obsidian sink protects existing References and user-modified notes
  const references="# Existing\n- [Untouched](https://example.org/old)\n";
  writeFileSync(join(vault,"References.md"),references);
  try{
-  const registry=createDefaultRegistry(),project=demo("frontend");
+  const registry=createObsidianRegistry(),project=demo("frontend");
   await runProject(db,project,registry);
   const store=new KnowledgeStore(db);
   const records=store.listEntities(project.id).filter(x=>x.score>=project.policy.minimumScore);
@@ -308,7 +309,7 @@ test("rejecting an entity retires only unedited generated output; user annotatio
  const db=join(root,"db.sqlite"),vault=join(root,"vault");
  mkdirSync(vault);
  try{
-  const project=demo("frontend"),registered=createDefaultRegistry();
+  const project=demo("frontend"),registered=createObsidianRegistry();
   await runProject(db,project,registered);
   const store=new KnowledgeStore(db);
   const records=store.listEntities(project.id).filter(x=>x.score>=project.policy.minimumScore);

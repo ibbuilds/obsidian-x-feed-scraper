@@ -1,0 +1,59 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/ibbuilds/source-scraper/v0.10.0-beta.1/schemas/observation-v1.schema.json",
+  "title": "Source Scraper normalized observation v1",
+  "description": "A source adapter yields normalized observations; sources may lack web links.",
+  "type": "object",
+  "required": [
+    "id",
+    "type"
+  ],
+  "properties": {
+    "id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 300
+    },
+    "type": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_-]{1,63}$"
+    },
+    "title": {
+      "type": "string",
+      "maxLength": 2000
+    },
+    "text": {
+      "type": "string",
+      "maxLength": 20000
+    },
+    "url": {
+      "type": "string",
+      "format": "uri"
+    },
+    "urls": {
+      "type": "array",
+      "maxItems": 100,
+      "items": {
+        "type": "string",
+        "format": "uri"
+      }
+    },
+    "media": {
+      "type": "array",
+      "maxItems": 100,
+      "items": {
+        "type": "string",
+        "format": "uri"
+      }
+    },
+    "occurredAt": {
+      "type": "string",
+      "maxLength": 100,
+      "description": "A timestamp parseable by Node Date.parse, preserved without fabricating an ISO representation"
+    },
+    "attributes": {
+      "type": "object"
+    }
+  },
+  "additionalProperties": false
+}

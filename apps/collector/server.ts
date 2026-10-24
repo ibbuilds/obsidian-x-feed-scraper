@@ -11,7 +11,7 @@ import type {Profile,Post} from "../../packages/core/types.ts";
 import {join} from "node:path";
 import {existsSync} from "node:fs";
 import {loadProject} from "../../packages/core/project-config.ts";
-import {createDefaultRegistry} from "../../packages/core/extensions.ts";
+import {createObsidianRegistry} from "../../packages/integrations/obsidian-registry.ts";
 import {runProject,reprocessProject} from "../../packages/core/engine.ts";
 import {exportProject} from "../../packages/core/export-project.ts";
 import {KnowledgeStore} from "../../packages/storage/knowledge.ts";
@@ -87,7 +87,7 @@ export function startServer(config:ServerOptions):ReturnType<typeof createServer
   }
   const configuredProject=config.projectPath?loadProject(config.projectPath):undefined;
   const projectRegistry=configuredProject?
-    createDefaultRegistry(config.extensionPath?[config.extensionPath]:[]):undefined;
+    createObsidianRegistry(config.extensionPath?[config.extensionPath]:[]):undefined;
   if(configuredProject&&config.intervalMinutes>0&&config.intervalMinutes<15){
     throw new Error("Scheduled project collection must be at least 15 minutes");
   }

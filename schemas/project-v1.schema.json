@@ -1,0 +1,118 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/ibbuilds/source-scraper/v0.10.0-beta.1/schemas/project-v1.schema.json",
+  "title": "Source Scraper project manifest v1",
+  "description": "Declarative project configuration; run source-scraper validate for runtime parsing. Adapter-specific configs are validated by adapters.",
+  "type": "object",
+  "required": [
+    "id",
+    "name",
+    "sources"
+  ],
+  "properties": {
+    "id": {
+      "$ref": "#/$defs/id"
+    },
+    "name": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 200
+    },
+    "sources": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 30,
+      "items": {
+        "$ref": "#/$defs/connection"
+      }
+    },
+    "pipeline": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 25,
+      "items": {
+        "$ref": "#/$defs/id"
+      }
+    },
+    "evaluator": {
+      "$ref": "#/$defs/id"
+    },
+    "policy": {
+      "type": "object",
+      "properties": {
+        "includeKeywords": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 100
+          },
+          "maxItems": 60
+        },
+        "excludeKeywords": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 100
+          },
+          "maxItems": 60
+        },
+        "minimumScore": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 100
+        }
+      },
+      "additionalProperties": true
+    },
+    "outputs": {
+      "type": "array",
+      "maxItems": 10,
+      "items": {
+        "$ref": "#/$defs/connection"
+      }
+    },
+    "entitySchemas": {
+      "type": "object"
+    },
+    "watch": {
+      "type": "object",
+      "properties": {
+        "rules": {
+          "type": "array",
+          "maxItems": 40,
+          "items": {
+            "type": "object"
+          }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "id": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_-]{1,63}$"
+    },
+    "connection": {
+      "type": "object",
+      "required": [
+        "id",
+        "adapter"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/id"
+        },
+        "adapter": {
+          "$ref": "#/$defs/id"
+        },
+        "config": {
+          "type": "object"
+        }
+      },
+      "additionalProperties": true
+    }
+  },
+  "additionalProperties": true
+}

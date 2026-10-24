@@ -1,7 +1,7 @@
 name: CI
 on:
   push:
-    branches: [main, feat/obsidian-first-production, feat/real-obsidian-desktop-e2e]
+    branches: [main]
   pull_request:
   workflow_dispatch:
 permissions:
@@ -24,22 +24,41 @@ jobs:
         run: npm audit --omit=dev --audit-level=high
       - name: Static typecheck
         run: npm run check
-      - name: Build installable Obsidian plugin ZIP
+      - name: Build standalone Source Scraper CLI and optional Obsidian plugin
         run: npm run package
-      - name: All tests, including packaged collector
+      - name: All tests including standalone CLI and packaged plugin
         run: npm test
-      - name: Smoke CLI with synthetic fixtures and persisted-state assertions
-        run: node scripts/ci-smoke.mjs
+      - name: Real persisted-state CLI smoke across operating systems
+        run: npm run smoke
+      - name: Verify installable standalone npm tarball
+        if: runner.os == 'Linux'
+        run: |
+          npm pack --pack-destination dist --ignore-scripts --silent
+          test -s dist/source-scraper-0.10.0.tgz
+          tar -tzf dist/source-scraper-0.10.0.tgz | grep -Fx package/dist/source-scraper.mjs
+          if tar -tzf dist/source-scraper-0.10.0.tgz | grep -Eq 'apps/obsidian-plugin|obsidian-x-feed-scraper.zip|node_modules'; then
+            echo "CLI package must not include Obsidian or node_modules"
+            exit 1
+          fi
       - uses: actions/upload-artifact@v4
         if: runner.os == 'Linux'
         with:
-          name: x-feed-scraper-obsidian
+          name: source-scraper-cli
+          path: |
+            dist/source-scraper.mjs
+            dist/source-scraper-0.10.0.tgz
+          if-no-files-found: error
+          retention-days: 30
+      - uses: actions/upload-artifact@v4
+        if: runner.os == 'Linux'
+        with:
+          name: optional-obsidian-plugin
           path: dist/obsidian-x-feed-scraper.zip
           if-no-files-found: error
           retention-days: 30
 
   desktop-obsidian-e2e:
-    name: Desktop Obsidian integration (actual app)
+    name: Optional Obsidian Desktop integration (real app)
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:
@@ -59,7 +78,7 @@ jobs:
           sleep 2
           DISPLAY=:99 herbstluftwm &
           sleep 2
-      - name: Exercise X Feed Scraper in actual Obsidian
+      - name: Exercise optional plugin inside actual Obsidian
         env:
           DISPLAY: ':99'
           OBSIDIAN_VERSIONS: latest/latest

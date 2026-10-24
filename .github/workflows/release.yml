@@ -1,4 +1,4 @@
-name: Obsidian plugin preview release
+name: Source Scraper CLI and optional Obsidian preview release
 on:
   workflow_run:
     workflows: ["CI"]
@@ -6,7 +6,7 @@ on:
 permissions:
   contents: write
 concurrency:
-  group: discovery-preview-release
+  group: source-scraper-preview-release
   cancel-in-progress: false
 jobs:
   publish-preview:
@@ -24,29 +24,40 @@ jobs:
       - run: npm run check
       - run: npm run package
       - run: npm test
-      - name: Derive release identity from the tested checkout
+      - name: Pack CLI for offline npm install
+        run: npm pack --pack-destination dist --ignore-scripts --silent
+      - name: Verify artifacts and release identity on tested commit
         id: release
         run: |
           node --input-type=module - <<'NODE'
-          import {readFileSync,appendFileSync} from 'node:fs';
-          const version=JSON.parse(readFileSync('package.json','utf8')).version;
+          import {readFileSync,existsSync,appendFileSync} from 'node:fs';
+          const pkg=JSON.parse(readFileSync('package.json','utf8'));
           const plugin=JSON.parse(readFileSync('apps/obsidian-plugin/manifest.json','utf8'));
-          if(!/^\d+\.\d+\.\d+$/.test(version)||plugin.version!==version) {
-            throw new Error('Release and plugin versions must agree');
+          if(!/^\d+\.\d+\.\d+$/.test(pkg.version)||plugin.version!==pkg.version) {
+            throw new Error('Core and optional integration release versions must agree');
           }
-          appendFileSync(process.env.GITHUB_OUTPUT,`tag=v${version}-beta.1\nversion=${version}\n`);
+          for(const path of [
+            'dist/source-scraper.mjs',
+            'dist/source-scraper-'+pkg.version+'.tgz',
+            'dist/obsidian-x-feed-scraper.zip'
+          ])if(!existsSync(path))throw new Error('Missing release artifact '+path);
+          appendFileSync(process.env.GITHUB_OUTPUT,'tag=v'+pkg.version+'-beta.1\nversion='+pkg.version+'\n');
           NODE
-      - name: Publish tested Obsidian plugin preview
+          sha256sum dist/source-scraper.mjs dist/source-scraper-*.tgz dist/obsidian-x-feed-scraper.zip
+      - name: Publish tested Source Scraper CLI and optional Obsidian integration
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ steps.release.outputs.tag }}
           VERSION: ${{ steps.release.outputs.version }}
         run: |
           if gh release view "$TAG" >/dev/null 2>&1; then
-            echo "Preview release already exists; preserving its published asset."
+            echo "Preview release already exists; preserving its published assets."
           else
-            gh release create "$TAG" dist/obsidian-x-feed-scraper.zip \
-              --title "Discovery Engine for Obsidian v${VERSION} Beta1" \
+            gh release create "$TAG" \
+              dist/source-scraper.mjs \
+              "dist/source-scraper-${VERSION}.tgz" \
+              dist/obsidian-x-feed-scraper.zip \
+              --title "Source Scraper v${VERSION} Beta1 — JSON CLI + optional Obsidian" \
               --target "${{ github.event.workflow_run.head_sha }}" \
               --prerelease \
               --notes-file "docs/releases/${VERSION}.md"
