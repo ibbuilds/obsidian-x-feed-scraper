@@ -119,3 +119,32 @@ test("MCP project manifest works from an unrelated working directory without Obs
   assert.equal(result.newEntities,2);
  }finally{rmSync(dir,{recursive:true,force:true});}
 });
+
+test("MCP stdio negotiates 2026-07-28 stateless discovery and per-request metadata",async()=>{
+ const dir=mkdtempSync(join(tmpdir(),"knowledge-modern-mcp-")),db=join(dir,"store.sqlite");
+ try{
+  const modern=resolve("tests/fixtures/mock-modern-mcp-server.cjs");
+  const manifest=project("modern_observations",{args:[modern],protocol:"modern"});
+  const result=await runProject(db,manifest,createDefaultRegistry());
+  assert.equal(result.success,true,JSON.stringify(result.runs));
+  const store=new KnowledgeStore(db);
+  assert.equal(store.getEntity("mcp-lab","science:modern-1")?.attributes.edition,2026);
+  store.close();
+ }finally{rmSync(dir,{recursive:true,force:true});}
+});
+test("automatic MCP era selection supports modern and legacy while strict modes reject mismatches",async()=>{
+ const dir=mkdtempSync(join(tmpdir(),"knowledge-mcp-eras-")),db=join(dir,"store.sqlite");
+ try{
+  const modern=resolve("tests/fixtures/mock-modern-mcp-server.cjs");
+  const auto=project("modern_observations",{args:[modern]});
+  const success=await runProject(db,auto,createDefaultRegistry());
+  assert.equal(success.success,true,JSON.stringify(success.runs));
+  // Different IDs and databases are used to avoid connection fingerprints from
+  // treating a protocol change as an accidental source replacement.
+  const legacy=project("list_records",{protocol:"modern"});
+  legacy.id="legacy-explicit-mismatch";
+  const rejected=await runProject(join(dir,"legacy.db"),legacy,createDefaultRegistry());
+  assert.equal(rejected.success,false);
+  assert.match(rejected.runs[0].error||"",/modern discovery|protocol/);
+ }finally{rmSync(dir,{recursive:true,force:true});}
+});
