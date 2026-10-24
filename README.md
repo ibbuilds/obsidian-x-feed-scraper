@@ -8,7 +8,7 @@ The project is a **data engine**, not an X-specific scraper, bookmarking app, Ob
 
 ## Quick start — one file, zero setup for the offline demo
 
-**Requirement:** Node.js **22.16+**. Download [`source-scraper.mjs` from v0.11.0-beta.1](https://github.com/ibbuilds/source-scraper/releases/download/v0.11.0-beta.1/source-scraper.mjs), then:
+**Requirement:** Node.js **22.16+**. Download [`source-scraper.mjs` from v0.12.0-beta.1](https://github.com/ibbuilds/source-scraper/releases/download/v0.12.0-beta.1/source-scraper.mjs), then:
 
 ```sh
 node source-scraper.mjs init --dir ./demo
@@ -88,16 +88,22 @@ node dist/source-scraper.mjs init --dir ./demo
 npm test
 ```
 
-The `source-scraper-0.11.0.tgz` asset is also provided for users who prefer a local npm package. **The package has not been published to npm;** do not confuse this tarball with a public registry listing.
+The `source-scraper-0.12.0.tgz` asset is also provided for users who prefer a local npm package. **The package has not been published to npm;** do not confuse this tarball with a public registry listing.
 
 ## Performance and release policy
 
-The 0.11 release adds reusable SQLite prepared statements and per-entity
-review/history indexes, avoids re-reading JSON files and hashing snapshots on
-every page, and streams large JSON/NDJSON exports in bounded pages. See the
-offline [performance comparison](docs/performance.md) for reproducible
-measurements. The GitHub **Releases** list intentionally contains **only the
-current tested release**; historical Git tags and commits remain available.
+Version 0.12 builds on the 0.11 SQLite indexes and JSON paging optimizations:
+identical observations and assessments now avoid redundant database writes, and
+offline reevaluation commits in bounded 100-entity transactions. On one offline
+benchmark, rereading 1,800 records was ~2× faster and reevaluating 2,400
+records was ~6× faster, without modifying human reviews or historical source
+snapshots. External source latency and hardware can change these results.
+
+See the [performance comparison](docs/performance.md) for reproducible
+measurements and the optimization experiment that was **discarded** after
+showing inconsistent gains. The GitHub **Releases** list intentionally contains
+**only the current tested release**; historical Git tags and commits remain.
+A new release is verified before the previous download is deleted.
 
 ## Optional integrations
 
