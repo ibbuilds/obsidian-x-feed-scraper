@@ -1,0 +1,39 @@
+{
+  "id": "desktop-mcp",
+  "name": "MCP Lab Research",
+  "sources": [
+    {
+      "id": "lab-server",
+      "adapter": "mcp-stdio",
+      "config": {
+        "command": "node",
+        "args": [
+          "./mock-mcp-server.cjs"
+        ],
+        "tool": "list_records",
+        "timeoutMs": 15000
+      }
+    }
+  ],
+  "pipeline": [
+    "observation-entity"
+  ],
+  "evaluator": "keyword",
+  "policy": {
+    "includeKeywords": [
+      "microscopy",
+      "experimental"
+    ],
+    "excludeKeywords": [],
+    "minimumScore": 0
+  },
+  "outputs": [
+    {
+      "id": "notes",
+      "adapter": "obsidian",
+      "config": {
+        "folder": "Discovery Engine"
+      }
+    }
+  ]
+}
