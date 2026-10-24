@@ -678,8 +678,19 @@ export default class ScraperPlugin extends Plugin {
     this.registerView(VIEW,leaf=>new SourceView(leaf,this));
     this.addRibbonIcon("book-open-check","Open Discovery Engine",()=>{void this.activate();});
     this.addCommand({id:"open-candidates",name:"Open Discovery Engine",callback:()=>{void this.activate();}});
-    this.addCommand({id:"sync-authorized-source",name:"Sync authorized source",callback:()=>{
-      void this.call("/sync","POST").then(()=>this.redraw()).catch(e=>new Notice(asError(e)));
+    this.addCommand({id:"sync-authorized-source",name:"Sync configured source or research project",callback:()=>{
+      const endpoint=this.settings.projectManifestPath?"/project/sync":"/sync";
+      void this.call(endpoint,"POST").then(reply=>{
+        if(endpoint==="/project/sync"){
+          const value=reply as {result?:{success?:boolean;runs?:Array<{error?:string}>}};
+          if(value.result?.success!==true){
+            const errors=value.result?.runs?.map(run=>run.error).filter(Boolean)||[];
+            throw new Error("Research sync incomplete: "+(errors.slice(0,2).join("; ")||"Inspect project runs"));
+          }
+        }
+        this.notifyExport(reply);
+        return this.redraw();
+      }).catch(e=>new Notice(asError(e)));
     }});
     this.addCommand({id:"new-research-project",name:"Create research project",callback:()=>
       this.openProjectSetup()});
