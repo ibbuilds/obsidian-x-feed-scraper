@@ -240,6 +240,14 @@ export function startServer(config:ServerOptions):ReturnType<typeof createServer
           }
           if(url.pathname==="/projects"){
             json(res,200,knowledge.listProjects());
+          }else if(url.pathname==="/project/entity"){
+            const key=url.searchParams.get("key")||"";
+            if(!key||key.length>1000){
+              json(res,400,{error:"Valid entity key required"});
+            }else{
+              const evidence=knowledge.entityEvidence(projectId,key);
+              json(res,evidence?200:404,evidence||{error:"Entity not found"});
+            }
           }else if(url.pathname==="/project/entities"){
             json(res,200,knowledge.listEntities(projectId,{
               q:url.searchParams.get("q")||undefined,
