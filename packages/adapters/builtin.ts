@@ -12,11 +12,23 @@ function path(config:Record<string,unknown>):string{
   if(typeof config.path!=="string"||!config.path.trim())throw new Error("This adapter requires a local path");
   return resolve(config.path);
 }
+// Freeze a file's observed array for each collection run. Reading and parsing
+// 10k records once per page was O(records * pages); a fresh run gets a new signal.
+const jsonFileCache=new WeakMap<AbortSignal,Map<string,unknown[]>>();
 const jsonFile:SourceAdapter={
   id:"json-file",
-  async collect({source,cursor,limit}){
-    const value:unknown=JSON.parse(readFileSync(path(source.config),"utf8"));
-    if(!Array.isArray(value)||value.length>10000)throw new Error("JSON source must be an array of at most 10,000 observations");
+  async collect({source,cursor,limit,signal}){
+    let bySource=jsonFileCache.get(signal);
+    if(!bySource){bySource=new Map();jsonFileCache.set(signal,bySource);}
+    let value=bySource.get(source.id);
+    if(!value){
+      const loaded:unknown=JSON.parse(readFileSync(path(source.config),"utf8"));
+      if(!Array.isArray(loaded)||loaded.length>10000){
+        throw new Error("JSON source must be an array of at most 10,000 observations");
+      }
+      value=loaded;
+      bySource.set(source.id,value);
+    }
     const offset=cursor===undefined?0:Number(cursor);
     if(!Number.isSafeInteger(offset)||offset<0||offset>value.length)throw new Error("Invalid JSON cursor");
     const items=(value as unknown[]).slice(offset,offset+limit).map(validateObservation);

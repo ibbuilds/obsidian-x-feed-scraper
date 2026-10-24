@@ -36,6 +36,21 @@ Source IDs and cursors belong to project-specific connections. Entity identity a
 
 The original v0.4 tables remain intact and are imported additively into project `legacy-x-feed`. Migration is idempotent and does not rewrite old vault files.
 
+## Profiling and scalability
+
+SQLite connections cache prepared statements only for their own lifetime,
+avoiding repeated SQL parse/compile work during per-record ingestion. Additive
+indexes cover project/entity review lookups, assessment history and field
+changes; a partial index narrows repair to rows missing complete observation
+snapshots. Records, reviews and original versions are not deleted.
+
+JSON file/snapshot sources load the input once per collection run using the
+run-scoped abort signal; snapshot revision hashes are computed once, not once
+per page. A new run reloads the configured source. The JSON-first CLI streams
+exports in pages of at most 500 instead of collecting 100k fully enriched
+records in memory before serializing. Create-only export files are removed on
+a failed write. See [offline benchmark](performance.md).
+
 ## Failure boundaries
 
 All pages are schema-checked before writing. Each source page, its resulting entities/mentions and its next cursor are committed as **one SQLite transaction**. A failed page never advances its cursor. Processing runs are recorded with success/failure, and separate project sources can continue independently.

@@ -198,6 +198,8 @@ test("legacy replay migration restores only known immutable snapshots and does n
     // scores exist, but original drafts and per-mention assessments did not.
     const old=new DatabaseSync(ctx.db);
     old.exec("DROP TABLE IF EXISTS kb_mention_assessments");
+    // Simulated pre-v0.9 schema cannot retain an index on a column it lacks.
+    old.exec("DROP INDEX IF EXISTS kb_missing_observation_json");
     for(const [table,column] of [["kb_observations","observation_json"],["kb_mentions","draft_json"],
       ["kb_mentions","observation_json"],["kb_mentions","active"]]){
       const columns=old.prepare("PRAGMA table_info("+table+")").all() as Array<{name:string}>;

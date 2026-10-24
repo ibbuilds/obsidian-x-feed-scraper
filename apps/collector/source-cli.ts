@@ -4,6 +4,7 @@
  * No implicit vault writes, network notifications or external output adapters.
  */
 import {existsSync,mkdirSync,readFileSync,realpathSync,writeFileSync} from "node:fs";
+import {open as openFile,unlink} from "node:fs/promises";
 import {dirname,join,resolve} from "node:path";
 import {fileURLToPath} from "node:url";
 import {createDefaultRegistry} from "../../packages/core/extensions.ts";
@@ -144,24 +145,55 @@ function exportedEntity(store:KnowledgeStore,id:string,entity:KnowledgeEntity,co
     mentionsTruncated:entity.observationCount>detail.mentions.length
   }};
 }
-function exportRecords(store:KnowledgeStore,id:string,dataset:DataSet,flags:Flags,
-  limit:number,offset:number,compact:boolean):unknown[]{
-  const values:unknown[]=[];
-  let remaining=limit,current=offset;
-  while(remaining>0){
-    const count=Math.min(500,remaining);
-    const page=readPage(store,id,dataset,count,current,flags);
-    for(const item of page){
-      values.push(dataset==="entities"?exportedEntity(store,id,item as KnowledgeEntity,compact):item);
+/**
+ * Write bounded pages instead of retaining up to 100,000 fully enriched records
+ * and a second JSON string in memory. One write per page respects stdout flow.
+ * Create-only file exports are cleaned up on failures; existing files survive.
+ */
+async function streamExport(store:KnowledgeStore,id:string,dataset:DataSet,flags:Flags,
+  limit:number,offset:number,compact:boolean,format:"json"|"ndjson"):Promise<number>{
+  const path=flags.get("out")?resolve(required(flags,"out")):undefined;
+  const handle=path?await openFile(path,"wx",0o600):undefined;
+  let completed=false,records=0,remaining=limit,current=offset;
+  const write=async(content:string):Promise<void>=>{
+    if(handle)await handle.writeFile(content);
+    else await new Promise<void>((resolveWrite,rejectWrite)=>{
+      process.stdout.write(content,error=>error?rejectWrite(error):resolveWrite());
+    });
+  };
+  try{
+    if(format==="json"){
+      await write(JSON.stringify({schemaVersion:DATA_VERSION,dataset,projectId:id,
+        exportedAt:new Date().toISOString(),limit,offset}).slice(0,-1)+',"records":[');
     }
-    current+=page.length;remaining-=page.length;
-    if(page.length<count)break;
+    while(remaining>0){
+      const size=Math.min(500,remaining);
+      const page=readPage(store,id,dataset,size,current,flags);
+      if(!page.length)break;
+      const serialized=page.map(item=>{
+        const record=dataset==="entities"?
+          exportedEntity(store,id,item as KnowledgeEntity,compact):item;
+        return format==="json"?JSON.stringify(record):JSON.stringify({
+          schemaVersion:DATA_VERSION,dataset,projectId:id,record
+        });
+      });
+      if(format==="json"){
+        await write((records?",":"")+serialized.join(","));
+      }else await write(serialized.join("\n")+"\n");
+      records+=page.length;
+      current+=page.length;remaining-=page.length;
+      if(page.length<size)break;
+    }
+    if(format==="json")await write('],"count":'+records+"}\n");
+    await handle?.sync();
+    completed=true;
+    return records;
+  }finally{
+    try{await handle?.close();}
+    finally{
+      if(!completed&&path)await unlink(path).catch(()=>{});
+    }
   }
-  return values;
-}
-function ensureSafeFile(path:string,contents:string):void{
-  // No silent overwrite: a repeated export must name another file.
-  writeFileSync(resolve(path),contents,{flag:"wx",mode:0o600});
 }
 function init(dir:string):void{
   const root=resolve(dir),manifest=join(root,"project.json"),input=join(root,"observations.json");
@@ -257,19 +289,11 @@ async function execute(command:string,flags:Flags):Promise<void>{
       const compact=flags.get("compact")===undefined?false:
         ["true","false"].includes(flags.get("compact")!)?flags.get("compact")==="true":
         (()=>{throw new Error("--compact must be true or false");})();
-      const records=exportRecords(store,id,dataset,flags,limit,offset,compact);
-      const emitted= format==="json"?JSON.stringify({
-        schemaVersion:DATA_VERSION,dataset,projectId:id,exportedAt:new Date().toISOString(),
-        limit,offset,count:records.length,records
-      },null,2)+"\n":records.map(record=>JSON.stringify({
-        schemaVersion:DATA_VERSION,dataset,projectId:id,record
-      })).join("\n")+(records.length?"\n":"");
+      const count=await streamExport(store,id,dataset,flags,limit,offset,compact,format as "json"|"ndjson");
       if(flags.get("out")){
-        const path=resolve(required(flags,"out"));
-        ensureSafeFile(path,emitted);
         output({schemaVersion:DATA_VERSION,command,dataset,projectId:id,
-          format,path,count:records.length});
-      }else process.stdout.write(emitted);
+          format,path:resolve(required(flags,"out")),count});
+      }
     }else throw new Error("Unknown command");
   }finally{store.close();}
 }

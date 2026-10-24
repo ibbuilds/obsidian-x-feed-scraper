@@ -44,6 +44,28 @@ jobs:
           appendFileSync(process.env.GITHUB_OUTPUT,'tag=v'+pkg.version+'-beta.1\nversion='+pkg.version+'\n');
           NODE
           sha256sum dist/source-scraper.mjs dist/source-scraper-*.tgz dist/obsidian-x-feed-scraper.zip
+      # Explicit project policy: keep only the newly tested GitHub Release.
+      # Keep Git tags and commits for source history and reproducibility.
+      - name: Delete all older GitHub Releases before publishing this version
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.release.outputs.tag }}
+        run: |
+          set -euo pipefail
+          # Capture output directly: process substitution could mask GitHub API errors.
+          releases=$(gh release list --limit 1000 --json tagName --jq '.[].tagName')
+          while IFS= read -r old; do
+            [[ -z "$old" || "$old" == "$TAG" ]] && continue
+            echo "Deleting superseded GitHub Release $old (preserving its Git tag)"
+            gh release delete "$old" --yes
+          done <<< "$releases"
+          remaining=$(gh release list --limit 1000 --json tagName --jq '.[].tagName')
+          while IFS= read -r old; do
+            [[ -z "$old" || "$old" == "$TAG" ]] && continue
+            echo "ERROR: superseded release still published: $old"
+            exit 1
+          done <<< "$remaining"
       - name: Publish tested Source Scraper CLI and optional Obsidian integration
         env:
           GH_TOKEN: ${{ github.token }}
