@@ -16,7 +16,8 @@ test("Obsidian distribution ships complete installable desktop plugin",()=>{
   assert.equal((manifest as unknown as {name:string}).name,"Discovery Engine");
   assert.equal(manifest.isDesktopOnly,true);
   assert.equal((manifest as unknown as {minAppVersion:string}).minAppVersion,"1.9.2");
-  assert.equal(manifest.version,"0.9.0");
+  const version=JSON.parse(readFileSync("package.json","utf8")).version as string;
+  assert.equal(manifest.version,version,"Plugin and engine versions must agree");
   assert.ok(statSync(archive).size>10000);
   assert.equal(archiveEntries["collector.cjs"],undefined,"Collector must remain embedded in main.js");
   assert.equal(archiveEntries["design.json"],undefined,"Profile must remain embedded in main.js");
