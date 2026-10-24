@@ -287,6 +287,49 @@ class SourceView extends ItemView {
           const details=card.createEl("details");
           details.createEl("summary",{text:"Structured attributes"});
           details.createEl("p",{text:JSON.stringify(record.attributes).slice(0,1600)});
+          const evidencePanel=card.createEl("details");
+          evidencePanel.createEl("summary",{text:"Sources, evidence and review history"});
+          let loaded=false;
+          evidencePanel.addEventListener("toggle",()=>{
+            if(!evidencePanel.open||loaded)return;
+            loaded=true;
+            const content=evidencePanel.createDiv();
+            content.createEl("p",{text:"Loading source evidence..."});
+            void this.plugin.call("/project/entity?project="+encodeURIComponent(active)+
+              "&key="+encodeURIComponent(record.key)).then(raw=>{
+              content.empty();
+              const proof=raw as {
+                mentions:Array<{connectionId:string;itemId:string;title?:string;
+                  url?:string;evidence?:Array<{signal:string;detail:string}>}>;
+                reviews:Array<{decision:string;reason:string;date:string}>;
+                assessments:Array<{score:number;confidence:number;evaluatorId:string;date:string}>;
+              };
+              content.createEl("h6",{text:"Original observations ("+proof.mentions.length+")"});
+              for(const observation of proof.mentions.slice(0,25)){
+                const item=content.createEl("p",{text:observation.connectionId+
+                  " · "+(observation.title||observation.itemId)});
+                if(observation.url)external(item,"View original",observation.url);
+                for(const line of observation.evidence||[]){
+                  content.createEl("p",{cls:"xfs-meta",text:
+                    line.signal+" · "+line.detail});
+                }
+              }
+              content.createEl("h6",{text:"Assessment changes ("+proof.assessments.length+")"});
+              for(const evaluation of proof.assessments.slice(0,10)){
+                content.createEl("p",{cls:"xfs-meta",text:evaluation.date+
+                  " · "+evaluation.evaluatorId+" · "+evaluation.score+
+                  "/100 · confidence "+Math.round(evaluation.confidence*100)+"%"});
+              }
+              content.createEl("h6",{text:"Human review history"});
+              for(const review of proof.reviews.slice(0,10)){
+                content.createEl("p",{cls:"xfs-meta",text:review.date+" · "+
+                  review.decision+" · "+review.reason});
+              }
+            }).catch(error=>{
+              loaded=false;content.empty();
+              content.createEl("p",{text:"Evidence unavailable: "+asError(error)});
+            });
+          });
           const choices=card.createDiv({cls:"xfs-actions"});
           for(const [decision,label] of [
             ["approved","Approve"],["rejected","Reject"],["pending","Reopen"]
