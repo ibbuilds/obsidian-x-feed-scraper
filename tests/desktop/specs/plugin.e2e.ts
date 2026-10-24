@@ -159,4 +159,38 @@ describe("X Feed Scraper in actual Obsidian Desktop",function(){
     expect(state.notes.some(path=>path.startsWith("Discovery Engine/desktop-mcp/"))).toBe(true);
   });
 
+  it("creates an independent project through the GUI and runs the bundled offline example",async()=>{
+    const original=await browser.executeObsidian(async({app,obsidian})=>{
+      const f=app.vault.getAbstractFileByPath("References.md");
+      if(!(f instanceof obsidian.TFile))throw Error("Missing References.md");
+      return await app.vault.read(f);
+    });
+    const start=browser.$("//button[normalize-space()='Create research project']");
+    await start.waitForDisplayed({timeout:30000});
+    await start.click();
+    const modal=browser.$(".modal-container");
+    await modal.waitForDisplayed({timeout:10000});
+    await expect(modal).toHaveText(expect.stringContaining("Built-in offline demo"));
+    const create=browser.$("//button[normalize-space()='Create & run project']");
+    await create.click();
+    await browser.waitUntil(async()=>{
+      const content=await browser.$(".xfs-panel").getText();
+      return content.includes("motion kit")&&content.includes("Knowledge projects");
+    },{timeout:45000,timeoutMsg:"Offline example was not processed from the first-run wizard"});
+    const verify=await browser.executeObsidian(async({app,obsidian})=>{
+      const plugin=(app as unknown as {plugins:{plugins:Record<string,{
+        settings:{projectManifestPath:string}
+      }>}}).plugins.plugins["x-feed-scraper"];
+      const f=app.vault.getAbstractFileByPath("References.md");
+      if(!(f instanceof obsidian.TFile))throw Error("Missing References.md");
+      return {path:plugin.settings.projectManifestPath,
+        references:await app.vault.read(f),
+        notes:app.vault.getMarkdownFiles().map(n=>n.path)};
+    });
+    expect(verify.path).toContain(".x-feed-scraper");
+    expect(verify.path).toContain("projects");
+    expect(verify.references).toBe(original);
+    expect(verify.notes.some(path=>path.startsWith("Discovery Engine/p-my-research-"))).toBe(true);
+  });
+
 });
