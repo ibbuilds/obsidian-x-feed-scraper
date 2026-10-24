@@ -185,7 +185,8 @@ export class KnowledgeStore extends Store {
             "category=CASE WHEN excluded.score>=score THEN excluded.category ELSE category END,"+
             "score=max(score,excluded.score),confidence=max(confidence,excluded.confidence),"+
             "reasons_json=CASE WHEN excluded.score>=score THEN excluded.reasons_json ELSE reasons_json END,"+
-            "evaluator_id=excluded.evaluator_id,updated_at=excluded.updated_at"
+            "evaluator_id=CASE WHEN excluded.score>=score THEN excluded.evaluator_id ELSE evaluator_id END,"+
+            "updated_at=excluded.updated_at"
           ).run(projectId,draft.key,assessment.category,assessment.score,assessment.confidence,
             reasons,evaluatorId,date);
           const updatedAssessment=this.db.prepare(
