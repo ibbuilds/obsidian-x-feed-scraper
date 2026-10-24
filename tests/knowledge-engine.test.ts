@@ -309,7 +309,7 @@ test("rejecting an entity retires only unedited generated output; user annotatio
  const db=join(root,"db.sqlite"),vault=join(root,"vault");
  mkdirSync(vault);
  try{
-  const project=demo("frontend"),registered=createDefaultRegistry();
+  const project=demo("frontend"),registered=createObsidianRegistry();
   await runProject(db,project,registered);
   const store=new KnowledgeStore(db);
   const records=store.listEntities(project.id).filter(x=>x.score>=project.policy.minimumScore);
