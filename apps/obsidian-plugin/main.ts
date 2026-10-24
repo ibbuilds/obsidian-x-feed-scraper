@@ -13,7 +13,7 @@ const VIEW="x-feed-scraper-view";
 interface SettingsData {
   nodeExecutable:string;autoStart:boolean;feedUrl:string;fixturePath:string;
   profilePath:string;intervalMinutes:number;scoreThreshold:number;
-  confidenceThreshold:number;preferFree:boolean;
+  confidenceThreshold:number;preferFree:boolean;autoEnrich:boolean;
 }
 interface Source {
   id:number;url:string;title:string;description?:string;license?:string;
@@ -25,7 +25,7 @@ interface Stats {
   posts:number;visuals:number;sources:number;links:number;high_quality:number;
   needs_review:number;approved:number;errors:number;
   active:boolean;paused:boolean;connectedSource:string;
-  personalizedXFeed:string;feedUrl?:string|null;
+  personalizedXFeed:string;feedUrl?:string|null;autoEnrich?:boolean;
   lastRun?:{started_at:string;ended_at:string;status:string;posts_seen:number;duplicates:number};
 }
 interface Recommendations {
@@ -34,7 +34,7 @@ interface Recommendations {
 }
 const DEFAULT:SettingsData={
   nodeExecutable:"node",autoStart:true,feedUrl:"",fixturePath:"",profilePath:"",
-  intervalMinutes:60,scoreThreshold:75,confidenceThreshold:0.65,preferFree:true
+  intervalMinutes:60,scoreThreshold:75,confidenceThreshold:0.65,preferFree:true,autoEnrich:false
 };
 function asError(error:unknown):string {
   return error instanceof Error?error.message:String(error);
@@ -165,6 +165,8 @@ class SourceView extends ItemView {
         " · Posts "+stats.posts+" · Unique sources "+stats.sources+
         " · Review "+stats.needs_review+" · Visuals "+stats.visuals+" · High quality "+stats.high_quality+
         " · Approved "+stats.approved+" · Errors "+stats.errors});
+      root.createEl("p",{cls:"xfs-meta",text:"Automatic public metadata analysis: "+
+        (stats.autoEnrich?"enabled by user":"off (opt-in under Settings)")});
       root.createEl("p",{cls:"xfs-meta",text:stats.paused?"Paused":
         stats.active?"Synchronization running":"Collector active; service bound to localhost only"});
       if(stats.lastRun)root.createEl("p",{cls:"xfs-meta",text:"Last run: "+
@@ -336,6 +338,11 @@ class ScraperSettings extends PluginSettingTab {
       .addToggle(t=>t.setValue(this.plugin.settings.preferFree).onChange(async value=>{
         this.plugin.settings.preferFree=value;await this.plugin.saveSettings();
       }));
+    new Setting(root).setName("Automatically analyze public source metadata")
+      .setDesc("Opt-in: on every permitted synchronization, fetch titles/descriptions and public GitHub license information from up to 10 external websites. No X website automation or credentials. Retries are bounded.")
+      .addToggle(t=>t.setValue(this.plugin.settings.autoEnrich).onChange(async value=>{
+        this.plugin.settings.autoEnrich=value;await this.plugin.saveSettings();
+      }));
     new Setting(root).setName("Custom research profile")
       .setDesc("Optional absolute path to a JSON profile; defaults to packaged design.json")
       .addText(t=>t.setValue(this.plugin.settings.profilePath).onChange(async value=>{
@@ -404,7 +411,8 @@ export default class ScraperPlugin extends Plugin {
       scheduleMinutes:this.settings.intervalMinutes,
       threshold:this.settings.scoreThreshold,
       confidence:this.settings.confidenceThreshold,
-      preferFree:this.settings.preferFree
+      preferFree:this.settings.preferFree,
+      autoEnrich:this.settings.autoEnrich
     });
   }
   async restart():Promise<void>{
