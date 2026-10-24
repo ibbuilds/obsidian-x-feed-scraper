@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://github.com/ibbuilds/source-scraper/blob/main/schemas/project-v1.schema.json",
+  "$id": "https://raw.githubusercontent.com/ibbuilds/source-scraper/v0.10.0-beta.1/schemas/project-v1.schema.json",
   "title": "Source Scraper project manifest v1",
   "description": "Declarative project configuration; run source-scraper validate for runtime parsing. Adapter-specific configs are validated by adapters.",
   "type": "object",
