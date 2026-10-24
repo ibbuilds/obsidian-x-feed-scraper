@@ -1,6 +1,6 @@
 import {test} from "node:test";
 import assert from "node:assert/strict";
-import {mkdtempSync,existsSync,readdirSync,readFileSync,rmSync,writeFileSync} from "node:fs";
+import {copyFileSync,mkdtempSync,existsSync,readdirSync,readFileSync,rmSync,writeFileSync} from "node:fs";
 import {tmpdir} from "node:os";
 import {join,resolve} from "node:path";
 import {spawnSync} from "node:child_process";
@@ -26,6 +26,17 @@ test("standalone executable is bundled independently of Obsidian",()=>{
   assert.equal(v.name,"source-scraper");
   assert.equal(v.version,JSON.parse(readFileSync("package.json","utf8")).version);
   assert.equal(v.jsonSchemaVersion,1);
+  const root=mkdtempSync(join(tmpdir(),"source-scraper-one-file-"));
+  try{
+    const copy=join(root,"source-scraper.mjs");
+    copyFileSync(binary,copy);
+    const isolated=spawnSync(process.execPath,[copy,"version"],{
+      cwd:root,encoding:"utf8",timeout:15000,env:{PATH:process.env.PATH||""}
+    });
+    assert.equal(isolated.status,0,isolated.stderr);
+    assert.equal(JSON.parse(isolated.stdout).version,v.version,
+      "Single-file executable must work with no adjacent node_modules or repository files");
+  }finally{rmSync(root,{recursive:true,force:true});}
   const adapters=asJson(["adapters"]);
   assert.ok(adapters.sources.includes("json-snapshot"));
   assert.ok(adapters.sources.includes("mcp-stdio"));
