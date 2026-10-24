@@ -267,12 +267,14 @@ export function startServer(config:ServerOptions):ReturnType<typeof createServer
             sqliteIntegrity:integrity,
             vaultPresent:Boolean(config.vault&&existsSync(config.vault)),
             referencesPresent:Boolean(referencePath&&existsSync(referencePath)),
-            collectorInput:source(),
+            collectorInput:configuredProject?"project:"+configuredProject.id:source(),
             personalizedXFeedAvailable:false,
             activeProjectId:configuredProject?.id||null,
             readyForManualImport:integrity==="ok",
-            readyForScheduledDiscovery:integrity==="ok"&&Boolean(config.feed),
-            nextStep:config.feed?"Verify the authorized source in /history":"Configure a permitted RSS URL or import observations manually"
+            readyForScheduledDiscovery:integrity==="ok"&&Boolean(config.feed||configuredProject),
+            nextStep:configuredProject?"Inspect /project/runs for connection results":
+              config.feed?"Verify the authorized source in /history":
+              "Configure a research project, permitted RSS feed, or import observations manually"
           });
         }else if(req.method==="GET"&&url.pathname==="/source"){
           const id=Number(url.searchParams.get("id"));
