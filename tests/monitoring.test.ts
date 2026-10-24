@@ -183,3 +183,28 @@ test("offline reprocessing does not manufacture new source snapshots or price ch
   end.close();
  }finally{rmSync(ctx.root,{recursive:true,force:true});}
 });
+
+test("a changing snapshot mid-pagination restarts safely instead of skipping earlier price changes",async()=>{
+ const ctx=setup("price-monitor");
+ try{
+  const first=await runProject(ctx.db,ctx.project,registered,{pageSize:1,maxPages:1});
+  assert.equal(first.success,false);
+  assert.equal(first.observations,1);
+  const store=new KnowledgeStore(ctx.db);
+  const originalCursor=store.cursor(ctx.project.id,"shop-snapshot");
+  assert.match(originalCursor||"",/^[a-f0-9]{16}:1$/);
+  store.close();
+  copyFileSync(resolve("examples/price-monitor/snapshot-updated.json"),ctx.file);
+  const retry=await runProject(ctx.db,ctx.project,registered,{pageSize:1,maxPages:1});
+  assert.equal(retry.success,false,"Second page still pending");
+  const after=new KnowledgeStore(ctx.db);
+  assert.equal(after.getEntity(ctx.project.id,"product:price-100")?.attributes.price,99.99);
+  assert.ok(after.listAlerts(ctx.project.id).some(x=>x.ruleId==="price-drop-10"));
+  const newCursor=after.cursor(ctx.project.id,"shop-snapshot");
+  assert.notEqual(newCursor,originalCursor,"Cursor must include source content fingerprint");
+  after.close();
+  const finish=await runProject(ctx.db,ctx.project,registered,{pageSize:1,maxPages:1});
+  assert.equal(finish.success,true);
+  assert.equal(finish.newEntities,1);
+ }finally{rmSync(ctx.root,{recursive:true,force:true});}
+});
