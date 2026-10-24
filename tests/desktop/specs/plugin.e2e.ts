@@ -173,10 +173,26 @@ describe("X Feed Scraper in actual Obsidian Desktop",function(){
     await expect(modal).toHaveText(expect.stringContaining("Built-in offline demo"));
     const create=browser.$("//button[normalize-space()='Create & run project']");
     await create.click();
-    await browser.waitUntil(async()=>{
+    try{
+      await browser.waitUntil(async()=>{
+        const content=await browser.$(".xfs-panel").getText();
+        return content.includes("motion kit")&&content.includes("Knowledge projects");
+      },{timeout:30000,timeoutMsg:"Offline example was not processed from the first-run wizard"});
+    }catch(error){
       const content=await browser.$(".xfs-panel").getText();
-      return content.includes("motion kit")&&content.includes("Knowledge projects");
-    },{timeout:45000,timeoutMsg:"Offline example was not processed from the first-run wizard"});
+      const notices=await browser.$(".notice").map(async x=>x.getText());
+      const state=await browser.executeObsidian(async({app})=>{
+        const instance=(app as unknown as {plugins:{plugins:Record<string,{
+          settings:{projectManifestPath:string};
+          bridge:{running:boolean;lastError:string}
+        }>}}).plugins.plugins["x-feed-scraper"];
+        return {manifest:instance?.settings.projectManifestPath,
+          running:instance?.bridge.running,error:instance?.bridge.lastError};
+      });
+      throw new Error("Offline demo did not appear. Panel: "+content.slice(0,1800)+
+        ". Notices: "+JSON.stringify(await Promise.all(notices))+
+        ". State: "+JSON.stringify(state)+". "+String(error));
+    }
     const evidence=browser.$("//summary[normalize-space()='Sources, evidence and review history']");
     await evidence.waitForDisplayed({timeout:15000});
     await evidence.click();
