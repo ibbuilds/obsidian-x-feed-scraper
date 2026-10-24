@@ -187,7 +187,7 @@ class SourceView extends ItemView {
     root.createEl("h3",{text:"Discovery Engine"});
     button(root,"Create research project",()=>this.plugin.openProjectSetup());
     const saved=this.plugin.installedProjects();
-    if(saved.length>1){
+    if(saved.length>1||saved.some(item=>item.path!==this.plugin.settings.projectManifestPath)){
       const selector=root.createEl("select",{attr:{"aria-label":"Choose saved research project"}});
       for(const project of saved){
         const item=selector.createEl("option",{text:project.name,attr:{value:project.path}});
@@ -355,12 +355,15 @@ class SourceView extends ItemView {
         generic.createEl("p",{cls:"xfs-muted",text:
           "Choose a research project manifest under Settings, or use the independent project CLI."});
       }
-      generic.createEl("h4",{text:"X Feed Scraper (legacy curation)"});
-      const warning=root.createDiv({cls:"xfs-warning"});
+      const legacyPanel=generic.createEl("details");
+      legacyPanel.open=!active;
+      legacyPanel.createEl("summary",{text:"Legacy X Feed Scraper tools"});
+      const legacy=legacyPanel.createDiv({cls:"xfs-legacy"});
+      const warning=legacy.createDiv({cls:"xfs-warning"});
       warning.createEl("strong",{text:"X For You: not connected."});
       warning.createEl("p",{text:"The authenticated personalized X For You feed has no verified authorized adapter. "+
         "Legacy RSS and manual imports are separate sources, never labeled as your For You timeline."});
-      const actions=root.createDiv({cls:"xfs-actions"});
+      const actions=legacy.createDiv({cls:"xfs-actions"});
       button(actions,"Refresh",()=>{void this.draw();});
       button(actions,"Diagnostics",()=>{
         void this.plugin.call("/diagnostics").then(result=>{
@@ -388,8 +391,8 @@ class SourceView extends ItemView {
       button(actions,"Open Bases",()=>{
         void this.plugin.app.workspace.openLinkText("X Feed Scraper/Sources.base","",false);
       });
-      root.createEl("h4",{text:"Curated sources"});
-      const controls=root.createDiv({cls:"xfs-controls"});
+      legacy.createEl("h4",{text:"Curated sources"});
+      const controls=legacy.createDiv({cls:"xfs-controls"});
       const search=controls.createEl("input",{attr:{placeholder:"Search title, URL or category",value:this.query}});
       search.value=this.query;
       const filter=controls.createEl("select");
@@ -414,9 +417,9 @@ class SourceView extends ItemView {
       button(pager,"Next",()=>{
         this.page++;void this.draw();
       }).disabled=sources.length<100;
-      if(!sources.length)root.createEl("p",{cls:"xfs-muted",text:"No sources match the filter."});
+      if(!sources.length)legacy.createEl("p",{cls:"xfs-muted",text:"No sources match the filter."});
       for(const source of sources){
-        const card=root.createDiv({cls:"xfs-card"});
+        const card=legacy.createDiv({cls:"xfs-card"});
         card.createEl("h5",{text:source.title||source.url});
         card.createEl("p",{cls:"xfs-meta",text:source.category+" · "+source.status+" · "+
           source.score+"/100 · confidence "+Math.round(source.confidence*100)+"% · "+source.access});
@@ -442,26 +445,26 @@ class SourceView extends ItemView {
             }).open());
         }
       }
-      const visualSection=root.createEl("details");
+      const visualSection=legacy.createEl("details");
       visualSection.createEl("summary",{text:"Visual-only references ("+visuals.length+")"});
       visualSection.createEl("p",{text:"No external project URL was found. Image links are kept only for human review."});
       for(const visual of visuals){
         const item=visualSection.createDiv();
         external(item,visual.author+" · "+visual.first_seen,visual.url);
       }
-      const errorSection=root.createEl("details");
+      const errorSection=legacy.createEl("details");
       errorSection.createEl("summary",{text:"Recent errors ("+recentErrors.length+")"});
       if(!recentErrors.length)errorSection.createEl("p",{text:"No recent errors recorded."});
       for(const error of recentErrors){
         errorSection.createEl("p",{cls:"xfs-meta",text:error.occurred_at+" · "+error.message});
       }
-      const log=root.createEl("details");
+      const log=legacy.createEl("details");
       log.createEl("summary",{text:"Run history"});
       for(const run of history.slice(0,15)){
         log.createEl("p",{cls:"xfs-meta",text:run.started_at+" · "+run.status+" · "+
           run.posts_seen+" posts · "+run.sources_new+" new · "+run.duplicates+" duplicates"});
       }
-      const manual=root.createEl("details");
+      const manual=legacy.createEl("details");
       manual.createEl("summary",{text:"Manual X post / account suggestions"});
       manual.createEl("p",{text:"These are links for human action only; no likes or follows are automated."});
       for(const post of recs.posts.slice(0,20)){
