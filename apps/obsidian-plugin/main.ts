@@ -8,6 +8,7 @@ import {libraryContains,appendApprovedReference} from "./library.ts";
 import {join} from "node:path";
 import {LocalBridge} from "./bridge.ts";
 import {prepareBundledAssets} from "./embedded.ts";
+import {normalizeUrl} from "../../packages/core/url.ts";
 
 const VIEW="x-feed-scraper-view";
 interface SettingsData {
@@ -157,12 +158,13 @@ class SourceView extends ItemView {
     try{
       const query="/sources?limit=100&offset="+(this.page*100)+(this.status?"&status="+encodeURIComponent(this.status):"")+
         (this.query?"&q="+encodeURIComponent(this.query):"");
-      const [stats,sources,recs,history,visuals]=await Promise.all([
+      const [stats,sources,recs,history,visuals,recentErrors]=await Promise.all([
         this.plugin.call("/status") as Promise<Stats>,
         this.plugin.call(query) as Promise<Source[]>,
         this.plugin.call("/recommendations") as Promise<Recommendations>,
         this.plugin.call("/history") as Promise<Array<{started_at:string;status:string;posts_seen:number;sources_new:number;duplicates:number}>>,
-        this.plugin.call("/visuals") as Promise<Array<{id:string;url:string;author:string;first_seen:string}>>
+        this.plugin.call("/visuals") as Promise<Array<{id:string;url:string;author:string;first_seen:string}>>,
+        this.plugin.call("/errors") as Promise<Array<{occurred_at:string;message:string}>>
       ]);
       root.createEl("div",{cls:"xfs-stats",text:"Source: "+stats.connectedSource+
         " · Posts "+stats.posts+" · Unique sources "+stats.sources+
@@ -263,6 +265,12 @@ class SourceView extends ItemView {
         const item=visualSection.createDiv();
         external(item,visual.author+" · "+visual.first_seen,visual.url);
       }
+      const errorSection=root.createEl("details");
+      errorSection.createEl("summary",{text:"Recent errors ("+recentErrors.length+")"});
+      if(!recentErrors.length)errorSection.createEl("p",{text:"No recent errors recorded."});
+      for(const error of recentErrors){
+        errorSection.createEl("p",{cls:"xfs-meta",text:error.occurred_at+" · "+error.message});
+      }
       const log=root.createEl("details");
       log.createEl("summary",{text:"Run history"});
       for(const run of history.slice(0,15)){
@@ -316,7 +324,15 @@ class ScraperSettings extends PluginSettingTab {
     new Setting(root).setName("Authorized RSS/Atom URL")
       .setDesc("Public HTTP(S) feeds only. Do not use account/session tokens here. Not an X feed.")
       .addText(t=>t.setValue(this.plugin.settings.feedUrl).onChange(async value=>{
-        this.plugin.settings.feedUrl=value.trim();await this.plugin.saveSettings();
+        const candidate=value.trim();
+        try{
+          if(candidate)normalizeUrl(candidate);
+        }catch{
+          new Notice("Public feed URL rejected: credentials or invalid URL parameters. No secret was saved.");
+          return;
+        }
+        this.plugin.settings.feedUrl=candidate;
+        await this.plugin.saveSettings();
       }));
     new Setting(root).setName("Local fixture file (tests only)")
       .setDesc("Alternative to RSS; must be a local JSON file. Never indicates actual X coverage.")
@@ -374,6 +390,14 @@ export default class ScraperPlugin extends Plugin {
   async onload():Promise<void>{
     const loaded=await this.loadData() as Partial<SettingsData>|null;
     this.settings={...DEFAULT,...(loaded||{})};
+    if(this.settings.feedUrl){
+      try{normalizeUrl(this.settings.feedUrl);}
+      catch{
+        this.settings.feedUrl="";
+        await this.saveSettings();
+        new Notice("An unsafe saved feed URL was cleared. Credentials must not be stored in the vault.");
+      }
+    }
     this.registerView(VIEW,leaf=>new SourceView(leaf,this));
     this.addRibbonIcon("book-open-check","Open X Feed Scraper",()=>{void this.activate();});
     this.addCommand({id:"open-candidates",name:"Open curated sources",callback:()=>{void this.activate();}});
