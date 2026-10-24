@@ -2,6 +2,7 @@ import {readFileSync} from "node:fs";
 import {dirname,resolve} from "node:path";
 import type {JsonRecord,JsonValue,ProjectDefinition,Observation,EntityDraft,Assessment} from "../sdk/contracts.ts";
 import {normalizeUrl} from "./url.ts";
+import {assertWatchRule} from "./change-tracking.ts";
 
 const ID=/^[a-z][a-z0-9_-]{1,63}$/;
 function object(v:unknown):Record<string,unknown>{
@@ -163,9 +164,21 @@ export function parseProject(raw:unknown):ProjectDefinition{
       schemas[type]={fields:normalized,required};
     }
   }
+  let watch:ProjectDefinition["watch"];
+  if(v.watch!==undefined){
+    const config=object(v.watch);
+    if(!Array.isArray(config.rules)||config.rules.length>40){
+      throw new Error("Watch configuration must contain at most 40 rules");
+    }
+    const rules=config.rules.map(assertWatchRule);
+    if(new Set(rules.map(r=>r.id)).size!==rules.length){
+      throw new Error("Duplicate watch rule identifiers");
+    }
+    watch={rules};
+  }
   return {id:id(v.id,"project id"),name:string(v.name,"project name",200),sources:normalizedSources,
     pipeline:pipeline.map(x=>id(x,"processor id")),evaluator:id(evaluator,"evaluator id"),
-    outputs:normalizedOutputs,entitySchemas:schemas,
+    outputs:normalizedOutputs,entitySchemas:schemas,watch,
     policy:{
       includeKeywords:keys(rules.includeKeywords??[],"include keywords"),
       excludeKeywords:keys(rules.excludeKeywords??[],"exclude keywords"),
@@ -180,7 +193,7 @@ export function loadProject(file:string):ProjectDefinition{
   const local=(value:string)=>value.startsWith("./")||value.startsWith("../")||
     value.startsWith(".\\")||value.startsWith("..\\");
   for(const source of project.sources){
-    if(source.adapter==="json-file"&&typeof source.config.path==="string"){
+    if(["json-file","json-snapshot"].includes(source.adapter)&&typeof source.config.path==="string"){
       source.config.path=resolve(dirname(path),source.config.path);
     }
     if(source.adapter==="mcp-stdio"){

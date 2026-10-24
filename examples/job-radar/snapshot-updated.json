@@ -1,0 +1,42 @@
+[
+  {
+    "id": "job-100",
+    "type": "job-listing",
+    "title": "Frontend Engineer",
+    "url": "https://example.org/careers/100",
+    "attributes": {
+      "company": "Example Labs",
+      "location": "Remote",
+      "status": "closed",
+      "salaryMin": 110000,
+      "salaryMax": 155000,
+      "currency": "USD"
+    }
+  },
+  {
+    "id": "job-101",
+    "type": "job-listing",
+    "title": "Research Analyst",
+    "url": "https://example.org/careers/101",
+    "attributes": {
+      "company": "Example Labs",
+      "location": "Remote",
+      "status": "open",
+      "salaryMin": 90000,
+      "salaryMax": 125000,
+      "currency": "USD"
+    }
+  },
+  {
+    "id": "job-102",
+    "type": "job-listing",
+    "title": "Data Engineer",
+    "url": "https://example.org/careers/102",
+    "attributes": {
+      "company": "Example Labs",
+      "location": "Remote",
+      "status": "open",
+      "currency": "USD"
+    }
+  }
+]

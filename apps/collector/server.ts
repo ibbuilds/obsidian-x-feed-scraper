@@ -255,6 +255,25 @@ export function startServer(config:ServerOptions):ReturnType<typeof createServer
               limit:Number(url.searchParams.get("limit")||50),
               offset:Number(url.searchParams.get("offset")||0)
             }));
+          }else if(url.pathname==="/project/changes"){
+            json(res,200,knowledge.listChanges(projectId,{
+              limit:Number(url.searchParams.get("limit")||50),
+              offset:Number(url.searchParams.get("offset")||0),
+              entityKey:url.searchParams.get("key")||undefined
+            }));
+          }else if(url.pathname==="/project/alerts"){
+            json(res,200,knowledge.listAlerts(projectId,
+              Number(url.searchParams.get("limit")||50)));
+          }else if(url.pathname==="/project/versions"){
+            const key=url.searchParams.get("key")||"";
+            if(!key||key.length>1000){
+              json(res,400,{error:"Valid entity key required"});
+            }else{
+              const data=knowledge.listVersions(projectId,key,
+                Number(url.searchParams.get("limit")||50));
+              json(res,knowledge.getEntity(projectId,key)?200:404,
+                data.length||knowledge.getEntity(projectId,key)?data:{error:"Entity not found"});
+            }
           }else if(url.pathname==="/project/runs"){
             json(res,200,knowledge.runs(projectId,20));
           }else if(url.pathname==="/project/observations"){

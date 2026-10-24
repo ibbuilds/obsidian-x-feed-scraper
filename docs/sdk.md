@@ -79,3 +79,7 @@ This is a source-level SDK. A separately versioned npm SDK package has not been 
 ## Bridging existing MCP servers
 
 The built-in `mcp-stdio` source calls an explicitly selected listing tool on a trusted local server. It can map arbitrary provider JSON fields into observations without additional TypeScript code. See `docs/mcp-stdio.md`. A connected MCP does not automatically imply access to private or personalized provider timelines.
+
+## Versioned domain-neutral monitoring
+
+Stable `Observation.id` and `EntityDraft.key` values allow the engine to compare successive snapshots from any adapter. Changes are stored per field in SQLite with original observation provenance. An optional project's `watch.rules` array generates local audit alerts. This is a capability of the generic core, not a product/job-specific SDK extension. Snapshots, source timestamps and availability claims remain the adapter's responsibility. See `docs/monitoring.md`.

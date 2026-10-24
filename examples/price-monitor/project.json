@@ -1,0 +1,64 @@
+{
+  "id": "price-monitor-demo",
+  "name": "Price monitor: synthetic products",
+  "sources": [
+    {
+      "id": "shop-snapshot",
+      "adapter": "json-snapshot",
+      "config": {
+        "path": "snapshot.json"
+      }
+    }
+  ],
+  "pipeline": [
+    "observation-entity"
+  ],
+  "evaluator": "keyword",
+  "policy": {
+    "includeKeywords": [
+      "headphones",
+      "keyboard"
+    ],
+    "excludeKeywords": [],
+    "minimumScore": 0
+  },
+  "watch": {
+    "rules": [
+      {
+        "id": "new-item",
+        "path": "$",
+        "operator": "created"
+      },
+      {
+        "id": "price-drop-10",
+        "path": "/attributes/price",
+        "operator": "decrease-percent",
+        "threshold": 10,
+        "requireUnchanged": [
+          "/attributes/currency"
+        ]
+      },
+      {
+        "id": "availability-change",
+        "path": "/attributes/availability",
+        "operator": "changed"
+      }
+    ]
+  },
+  "entitySchemas": {
+    "product": {
+      "fields": {
+        "price": "number",
+        "currency": "string",
+        "availability": "string"
+      }
+    }
+  },
+  "outputs": [
+    {
+      "id": "json",
+      "adapter": "json",
+      "config": {}
+    }
+  ]
+}

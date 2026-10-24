@@ -19,6 +19,12 @@ export class ProjectSetupModal extends Modal {
   private sourceType:ProjectSetup["sourceType"]="demo";
   private url="";
   private path="";
+  private urlsText="";
+  private jsonMappingText="";
+  private watchMode:NonNullable<ProjectSetup["watchMode"]>="none";
+  private watchPath="/attributes/status";
+  private watchThreshold=10;
+  private watchValue="closed";
   private command="node";
   private argsText="[]";
   private tool="";
@@ -51,9 +57,30 @@ export class ProjectSetupModal extends Modal {
           .setDesc("Only feeds you are permitted to access. Not an X For You feed.")
           .addText(t=>t.setPlaceholder("https://example.org/feed.xml")
             .setValue(this.url).onChange(value=>{this.url=value.trim();}));
-      }else if(this.sourceType==="json-file"){
-        new Setting(details).setName("Local observations JSON")
-          .setDesc("An absolute path to an array of observations. No account tokens.")
+      }else if(this.sourceType==="public-json"){
+        new Setting(details).setName("Public JSON API URL")
+          .setDesc("HTTPS public GET endpoint, for example a published job board API. "+
+            "Credential-bearing query URLs are rejected.")
+          .addText(t=>t.setPlaceholder("https://boards-api.greenhouse.io/v1/boards/.../jobs")
+            .setValue(this.url).onChange(value=>{this.url=value.trim();}));
+        const mapping=details.createEl("textarea",{attr:{rows:"4",style:"width:100%",
+          placeholder:'{"itemsPath":"jobs","idPath":"id","type":"job-listing",'+
+            '"titlePath":"title","urlPath":"absolute_url","attributes":'+
+            '{"location":"location.name"}}'}});
+        mapping.value=this.jsonMappingText;
+        mapping.addEventListener("input",()=>{this.jsonMappingText=mapping.value;});
+      }else if(this.sourceType==="public-product"){
+        details.createEl("p",{text:"Reads public Schema.org Product/Offer JSON-LD "+
+          "from HTTPS pages. A site's HTML price is not an independently verified quote."});
+        const input=details.createEl("textarea",{attr:{rows:"3",style:"width:100%",
+          placeholder:"One authorized HTTPS product page per line"}});
+        input.value=this.urlsText;
+        input.addEventListener("input",()=>{this.urlsText=input.value;});
+      }else if(this.sourceType==="json-file"||this.sourceType==="json-snapshot"){
+        new Setting(details).setName(this.sourceType==="json-snapshot"?
+          "Local JSON monitored on every collection":"Local observations JSON")
+          .setDesc("An absolute path to an array of observations. JSON snapshot mode "+
+            "rechecks existing records for changes; JSON file mode is append-only.")
           .addText(t=>t.setPlaceholder("/absolute/path/observations.json")
             .setValue(this.path).onChange(value=>{this.path=value.trim();}));
       }else if(this.sourceType==="mcp-stdio"){
@@ -107,6 +134,39 @@ export class ProjectSetupModal extends Modal {
           .setDesc("Explicit opt-in. Makes bounded network requests to public resources.")
           .addToggle(t=>t.setValue(this.metadata).onChange(value=>{this.metadata=value;}));
       }else this.metadata=false;
+      new Setting(details).setName("Track changes")
+        .setDesc("Optional: store watch alerts when a tracked entity changes. "+
+          "All observed field changes are retained even without an alert.")
+        .addDropdown(d=>d.addOptions({
+          "none":"Store history only",
+          "created":"New record discovered",
+          "changed":"A selected field changed",
+          "decrease-percent":"A number decreased by %",
+          "increase-percent":"A number increased by %",
+          "equals":"A field reached a value"
+        }).setValue(this.watchMode).onChange(value=>{
+          this.watchMode=value as NonNullable<ProjectSetup["watchMode"]>;
+          configureSource();
+        }));
+      if(this.watchMode!=="none"&&this.watchMode!=="created"){
+        new Setting(details).setName("Field to monitor")
+          .setDesc("JSON pointer, e.g. /attributes/price, /attributes/status.")
+          .addText(t=>t.setValue(this.watchPath).onChange(value=>{
+            this.watchPath=value.trim();
+          }));
+      }
+      if(this.watchMode==="decrease-percent"||this.watchMode==="increase-percent"){
+        new Setting(details).setName("Minimum percent change")
+          .addText(t=>t.setValue(String(this.watchThreshold)).onChange(value=>{
+            this.watchThreshold=Number(value);
+          }));
+      }
+      if(this.watchMode==="equals"){
+        new Setting(details).setName("Target value")
+          .addText(t=>t.setValue(this.watchValue).onChange(value=>{
+            this.watchValue=value;
+          }));
+      }
       new Setting(details).setName("Automatic interval (minutes)")
         .setDesc(isDemo?"Demo defaults to manual execution.":"0 for manual, or 15–1440 for scheduled collection.")
         .addText(t=>t.setValue(String(this.interval)).onChange(value=>{
@@ -118,13 +178,25 @@ export class ProjectSetupModal extends Modal {
       .addDropdown(d=>d.addOptions({
         "demo":"Built-in offline demo",
         "rss":"Public RSS / Atom",
-        "json-file":"Local JSON observations",
+        "json-file":"Local JSON observations (append-only)",
+        "json-snapshot":"Monitor local JSON changes",
+        "public-json":"Public JSON API (e.g. job listings)",
+        "public-product":"Public product page prices (JSON-LD)",
         "mcp-stdio":"Trusted local MCP server"
       }).setValue(this.sourceType).onChange(value=>{
         this.sourceType=value as ProjectSetup["sourceType"];
         this.mode=value==="demo"||value==="rss"?"linked-resources":
           "observation-entity";
         if(value==="rss")this.mode="extract-links";
+        if(value==="public-product"){
+          this.watchMode="decrease-percent";this.watchPath="/attributes/price";
+          this.watchThreshold=10;
+        }else if(value==="public-json"){
+          this.watchMode="created";this.watchPath="/attributes/status";
+        }else if(value==="json-snapshot"){
+          this.watchMode="changed";this.watchPath="/attributes/status";
+        }else this.watchMode="none";
+
         this.interval=value==="demo"?0:60;
         configureSource();
       }));
@@ -157,16 +229,25 @@ export class ProjectSetupModal extends Modal {
               }
             }
           }
+          let jsonMapping:unknown;
+          if(this.sourceType==="public-json"){
+            try{jsonMapping=JSON.parse(this.jsonMappingText);}catch{
+              throw new Error("Public API mapping must be valid JSON");
+            }
+          }
           const id=projectId(this.name);
           const project=buildProject({
             id,name:this.name,
             sourceType:this.sourceType,sourceUrl:this.url,sourcePath:this.path,
+            sourceUrls:this.urlsText,jsonMapping,
             demoPath:this.sourceType==="demo"?this.host.projectDemoPath(id):undefined,
             mcpCommand:this.command,mcpArgs:args,
             mcpTool:this.tool,mcpMapping:mapping,
             includeKeywords:this.positive,excludeKeywords:this.negative,
             mode:this.mode,publicMetadata:this.metadata,
-            minimumScore:this.threshold
+            minimumScore:this.threshold,
+            watchMode:this.watchMode,watchPath:this.watchPath,
+            watchThreshold:this.watchThreshold,watchValue:this.watchValue
           });
           await this.host.installResearchProject(project,{
             demo:this.sourceType==="demo",intervalMinutes:this.interval

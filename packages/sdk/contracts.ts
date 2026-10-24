@@ -5,6 +5,15 @@
  */
 export type JsonValue = null | string | number | boolean | JsonValue[] | {[key:string]:JsonValue};
 export type JsonRecord = {[key:string]:JsonValue};
+/** Declarative, source-independent alerts on changes to retained entities. */
+export interface ChangeRule {
+  id:string;
+  path:string; // RFC 6901 JSON pointer, e.g. /attributes/price
+  operator:"created"|"changed"|"equals"|"decrease-percent"|"increase-percent";
+  threshold?:number;
+  value?:JsonValue;
+  requireUnchanged?:string[]; // e.g. /attributes/currency
+}
 
 export interface Observation {
   id:string;
@@ -62,6 +71,7 @@ export interface ProjectDefinition {
   outputs:ProjectOutput[];
   /** Per-entity attribute schemas: fields with types, all optional unless in required. */
   entitySchemas?:Record<string,{fields:Record<string,"string"|"number"|"boolean">;required?:string[]}>;
+  watch?:{rules:ChangeRule[]};
 }
 export interface SourceContext {
   source:ProjectSource;

@@ -53,6 +53,10 @@ const DEFAULT:SettingsData={
   intervalMinutes:60,scoreThreshold:75,confidenceThreshold:0.65,preferFree:true,autoEnrich:false,
   projectManifestPath:"",extensionPath:""
 };
+function monitorValue(value:unknown):string{
+  const encoded=JSON.stringify(value);
+  return (encoded===undefined?"—":encoded).slice(0,120);
+}
 function asError(error:unknown):string {
   return error instanceof Error?error.message:String(error);
 }
@@ -345,6 +349,38 @@ class SourceView extends ItemView {
             ).open());
           }
         }
+        const monitor=generic.createEl("details");
+        const [alerts,changes]=await Promise.all([
+          this.plugin.call("/project/alerts?project="+encodeURIComponent(active)+
+            "&limit=30") as Promise<Array<{id:number;entityKey:string;ruleId:string;
+              explanation:string;detectedAt:string;path:string;before?:unknown;after?:unknown}>>,
+          this.plugin.call("/project/changes?project="+encodeURIComponent(active)+
+            "&limit=40") as Promise<Array<{id:number;entityKey:string;path:string;
+              kind:string;observedAt:string;before?:unknown;after?:unknown}>>
+        ]);
+        monitor.createEl("summary",{text:"Monitoring: "+alerts.length+
+          " recent alerts · "+changes.length+" recent changes"});
+        if(alerts.length){
+          monitor.createEl("h5",{text:"Matched monitoring rules"});
+          for(const alert of alerts){
+            const item=monitor.createDiv({cls:"xfs-card"});
+            item.createEl("p",{text:alert.ruleId+" · "+alert.entityKey});
+            item.createEl("p",{cls:"xfs-meta",text:alert.detectedAt+" · "+alert.explanation});
+            item.createEl("p",{text:alert.path+" · "+
+              monitorValue(alert.before)+" → "+
+              monitorValue(alert.after)});
+          }
+        }
+        if(changes.length){
+          monitor.createEl("h5",{text:"Change history"});
+          for(const change of changes.slice(0,20)){
+            monitor.createEl("p",{cls:"xfs-meta",text:change.observedAt+" · "+
+              change.entityKey+" · "+change.kind+" · "+change.path+" · "+
+              monitorValue(change.before)+" → "+
+              monitorValue(change.after)});
+          }
+        }else monitor.createEl("p",{text:"No changes recorded yet. "+
+          "Snapshot sources recheck the same record identities on subsequent collections."});
         const runs=await this.plugin.call("/project/runs?project="+
           encodeURIComponent(active)) as Array<{connection_id:string;status:string;
           started_at:string;observations:number;new_entities:number;error?:string}>;

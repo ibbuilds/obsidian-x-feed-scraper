@@ -7,8 +7,9 @@ import type {ProjectDefinition,JsonRecord} from "../sdk/contracts.ts";
 /** Validated input for first-run project creation; no Obsidian dependencies. */
 export interface ProjectSetup {
   id:string;name:string;
-  sourceType:"demo"|"rss"|"json-file"|"mcp-stdio";
-  sourceUrl?:string;sourcePath?:string;
+  sourceType:"demo"|"rss"|"json-file"|"json-snapshot"|"public-json"|"public-product"|"mcp-stdio";
+  sourceUrl?:string;sourcePath?:string;sourceUrls?:string;
+  jsonMapping?:unknown;
   demoPath?:string;
   mcpCommand?:string;mcpArgs?:string[];mcpTool?:string;
   mcpMapping?:unknown;
@@ -18,6 +19,8 @@ export interface ProjectSetup {
   publicMetadata?:boolean;
   minimumScore?:number;
   outputFolder?:string;
+  watchMode?:"none"|"created"|"changed"|"decrease-percent"|"increase-percent"|"equals";
+  watchPath?:string;watchThreshold?:number;watchValue?:string;
 }
 function terms(raw:string|undefined):string[]{
   const items=(raw||"").split(/[,\n]/g).map(part=>part.trim()).filter(Boolean);
@@ -41,11 +44,32 @@ export function buildProject(setup:ProjectSetup):ProjectDefinition{
       ["x.com","www.x.com","twitter.com","www.twitter.com"].includes(new URL(config.url).hostname)){
       throw new Error("X is not an authorized RSS source");
     }
-  }else if(setup.sourceType==="json-file"||setup.sourceType==="demo"){
-    adapter="json-file";
+  }else if(["json-file","json-snapshot","demo"].includes(setup.sourceType)){
+    adapter=setup.sourceType==="json-snapshot"?"json-snapshot":"json-file";
     const raw=required(setup.sourceType==="demo"?setup.demoPath:setup.sourcePath,"local JSON file");
     if(!isAbsolute(raw))throw new Error("Local JSON file path must be absolute");
     config={path:resolve(raw)};
+  }else if(setup.sourceType==="public-json"){
+    adapter="public-json";
+    const url=normalizeUrl(required(setup.sourceUrl,"public JSON API URL"));
+    if(new URL(url).protocol!=="https:")throw new Error("Public JSON requires HTTPS");
+    if(!setup.jsonMapping||typeof setup.jsonMapping!=="object"||
+      Array.isArray(setup.jsonMapping))throw new Error("Public JSON API requires a field mapping");
+    const fields=parseMcpMapping({
+      ...setup.jsonMapping as Record<string,unknown>,
+      hasMorePath:"ignoredHasMore",nextCursorPath:"ignoredCursor"
+    });
+    if(!fields)throw new Error("Invalid public JSON mapping");
+    config={url,mapping:JSON.parse(JSON.stringify(fields)) as JsonRecord};
+  }else if(setup.sourceType==="public-product"){
+    adapter="public-product";
+    const urls=(setup.sourceUrls||"").split(/[\n,]/g).map(s=>s.trim()).filter(Boolean);
+    if(!urls.length||urls.length>100)throw new Error("Enter 1–100 public product URLs");
+    const unique=[...new Set(urls.map(value=>normalizeUrl(value)))];
+    if(unique.some(url=>new URL(url).protocol!=="https:")){
+      throw new Error("Public product monitoring requires HTTPS URLs");
+    }
+    config={urls:unique};
   }else if(setup.sourceType==="mcp-stdio"){
     adapter="mcp-stdio";
     const command=required(setup.mcpCommand,"trusted MCP command",1000);
@@ -69,11 +93,29 @@ export function buildProject(setup:ProjectSetup):ProjectDefinition{
     !/^[\p{L}\p{N} _-]{1,64}$/u.test(outputFolder)||outputFolder==="."||outputFolder===".."){
     throw new Error("Invalid Obsidian output folder");
   }
+  const watchRules:Array<Record<string,unknown>>=[];
+  const watchMode=setup.watchMode||"none";
+  if(watchMode!=="none"){
+    const field=setup.watchPath||"/attributes/price";
+    const rule:Record<string,unknown>={
+      id:"user-watch",path:watchMode==="created"?"$":field,
+      operator:watchMode
+    };
+    if(watchMode==="decrease-percent"||watchMode==="increase-percent"){
+      rule.threshold=setup.watchThreshold??10;
+      if(field==="/attributes/price"){
+        rule.requireUnchanged=["/attributes/currency"];
+      }
+    }
+    if(watchMode==="equals")rule.value=setup.watchValue||"";
+    watchRules.push(rule);
+  }
   return parseProject({
     id:setup.id,name:setup.name,
     sources:[{id:"primary-source",adapter,config}],
     pipeline:[setup.mode,...(setup.publicMetadata?["public-metadata"]:[])],
     evaluator:"keyword",policy,
+    ...(watchRules.length?{watch:{rules:watchRules}}:{}),
     outputs:[{id:"obsidian-library",adapter:"obsidian",config:{folder:outputFolder}}]
   });
 }

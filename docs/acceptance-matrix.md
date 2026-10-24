@@ -1,4 +1,4 @@
-# Discovery Engine 0.7.0 acceptance and release boundaries
+# Discovery Engine 0.8.0 acceptance and release boundaries
 
 CI verification refers to the automated GitHub Actions tests, not the user's personal Obsidian vault or X account. Feature status must not be inferred from installability alone.
 
@@ -20,6 +20,11 @@ CI verification refers to the automated GitHub Actions tests, not the user's per
 | Guided project setup and offline sample | Tested in real Obsidian Desktop | RSS/JSON/MCP/demo setup, bundled offline sample completes without external services or touching References.md |
 | CLI without Obsidian | Implemented and tested | project sync, list, entities, review, reprocess and export |
 | Additive migration of v0.4.0 | Implemented and tested | Original posts, sources, relations, reviews and References.md retained |
+| Immutable revisions and field change log | Implemented and tested | Repeated identical snapshots produce no duplicates; changed fields record old/new values and source identity |
+| Configurable change watches | Implemented and tested | New records, changed values, percent drop/rise, equality; unchanged-currency guard |
+| Product price monitor | Implemented with deterministic tests | Public Schema.org Product/Offer structured-data adapter and local price-drop scenario; real merchant support varies |
+| Job opportunities monitor | Implemented with deterministic tests | Generic HTTPS JSON API mapping, public Greenhouse example template and synthetic job status/location changes; cannot infer closure from absence |
+| External notifications | Not implemented | Alerts are local SQLite/UI/CLI records, not email/SMS/push notifications |
 | MCP interoperability | Tested with synthetic servers | Modern 2026-07-28 and legacy stdio, explicit selected tools, declarative provider JSON mapping, timeouts and secret scoping |
 | External extensions security sandbox | **Not implemented** | Only explicitly trusted local .cjs files; OS-level isolation needed for untrusted modules |
 | True account-personalized X For You connector | **Blocked** | No verified authorized endpoint/provider method; no real user feed accessed |
