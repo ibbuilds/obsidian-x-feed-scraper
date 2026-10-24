@@ -3,12 +3,16 @@ import {
   WorkspaceLeaf,requestUrl
 } from "obsidian";
 import {createHash,randomBytes} from "node:crypto";
+import {existsSync,mkdirSync,readdirSync,readFileSync,writeFileSync,lstatSync} from "node:fs";
 import {homedir} from "node:os";
 import {libraryContains,appendApprovedReference} from "./library.ts";
-import {join} from "node:path";
+import {join,resolve} from "node:path";
 import {LocalBridge} from "./bridge.ts";
 import {prepareBundledAssets} from "./embedded.ts";
 import {normalizeUrl} from "../../packages/core/url.ts";
+import {demoObservations} from "../../packages/core/project-builder.ts";
+import {ProjectSetupModal} from "./setup.ts";
+import type {ProjectDefinition} from "../../packages/sdk/contracts.ts";
 
 const VIEW="x-feed-scraper-view";
 interface SettingsData {
@@ -181,6 +185,21 @@ class SourceView extends ItemView {
     const root=this.contentEl;
     root.empty();root.addClass("xfs-panel");
     root.createEl("h3",{text:"Discovery Engine"});
+    button(root,"Create research project",()=>this.plugin.openProjectSetup());
+    const saved=this.plugin.installedProjects();
+    if(saved.length>1){
+      const selector=root.createEl("select",{attr:{"aria-label":"Choose saved research project"}});
+      for(const project of saved){
+        const item=selector.createEl("option",{text:project.name,attr:{value:project.path}});
+        item.value=project.path;
+      }
+      selector.value=this.plugin.settings.projectManifestPath;
+      button(root,"Switch project",()=>{
+        void this.plugin.activateSavedProject(selector.value)
+          .then(()=>this.draw()).catch(error=>new Notice(asError(error)));
+      });
+    }
+
     if(!this.plugin.bridge.running){
       root.createEl("p",{text:this.plugin.bridge.lastError||
         "The local collector is not running. Node.js 22.16+ and the complete plugin ZIP are required."});
@@ -221,6 +240,12 @@ class SourceView extends ItemView {
       generic.createEl("h4",{text:"Knowledge projects"});
       const active=stats.activeProjectId;
       const projects=await this.plugin.call("/projects") as KnowledgeProject[];
+      if(!this.plugin.settings.projectManifestPath){
+        generic.createEl("p",{text:"No research project configured yet. Create one to start "+
+          "collecting, evaluating and storing information automatically."});
+        button(generic,"Try included offline demo",()=>this.plugin.openProjectSetup());
+      }
+
       for(const item of projects.slice(0,20)){
         generic.createEl("p",{cls:"xfs-meta",text:item.name+" · "+
           item.entities+" entities · "+item.observations+" observations"+
@@ -449,6 +474,10 @@ class ScraperSettings extends PluginSettingTab {
       .addText(t=>t.setValue(this.plugin.settings.nodeExecutable).onChange(async value=>{
         this.plugin.settings.nodeExecutable=value.trim()||"node";await this.plugin.saveSettings();
       }));
+    new Setting(root).setName("Create project without editing JSON")
+      .setDesc("Guided setup for an offline demo, RSS feed, local JSON file or trusted MCP tool.")
+      .addButton(button=>button.setButtonText("Create research project")
+        .onClick(()=>this.plugin.openProjectSetup()));
     new Setting(root).setName("Research project manifest")
       .setDesc("Absolute path to a project JSON file. The generic engine uses its own sources, "+
         "processors, evaluator and outputs; no X or Obsidian dependency is required.")
@@ -546,6 +575,8 @@ export default class ScraperPlugin extends Plugin {
     this.addCommand({id:"sync-authorized-source",name:"Sync authorized source",callback:()=>{
       void this.call("/sync","POST").then(()=>this.redraw()).catch(e=>new Notice(asError(e)));
     }});
+    this.addCommand({id:"new-research-project",name:"Create research project",callback:()=>
+      this.openProjectSetup()});
     this.addSettingTab(new ScraperSettings(this));
     if(this.settings.autoStart)void this.start().then(()=>this.redraw()).catch(()=>this.redraw());
   }
@@ -574,6 +605,90 @@ export default class ScraperPlugin extends Plugin {
     }
   }
   async saveSettings():Promise<void>{await this.saveData(this.settings);}
+  openProjectSetup():void{
+    new ProjectSetupModal(this,()=>{void this.redraw();}).open();
+  }
+  private localDataDirectory():string{
+    const {vault}=this.paths();
+    return join(homedir(),".x-feed-scraper",
+      createHash("sha256").update(vault).digest("hex").slice(0,20));
+  }
+  projectDemoPath(id:string):string{
+    if(!/^p-[a-z0-9-]+-[a-f0-9]{8}$/.test(id)){
+      throw new Error("Invalid research project identifier");
+    }
+    return join(this.localDataDirectory(),"projects",id+"-demo.json");
+  }
+  installedProjects():Array<{path:string;id:string;name:string}>{
+    const directory=join(this.localDataDirectory(),"projects");
+    if(!existsSync(directory))return [];
+    if(lstatSync(directory).isSymbolicLink())throw new Error("Unsafe projects directory");
+    const entries:Array<{path:string;id:string;name:string}>=[];
+    for(const file of readdirSync(directory)){
+      if(!/^p-[a-z0-9-]+-[a-f0-9]{8}\.json$/.test(file))continue;
+      const path=join(directory,file);
+      if(lstatSync(path).isSymbolicLink()||!lstatSync(path).isFile())continue;
+      try{
+        const parsed=JSON.parse(readFileSync(path,"utf8")) as {id?:unknown;name?:unknown};
+        if(typeof parsed.name==="string"&&parsed.name.length<=200&&
+          parsed.id===file.slice(0,-5))entries.push({path,id:parsed.id,name:parsed.name});
+      }catch{/* Ignore malformed project settings without altering user files. */}
+    }
+    return entries;
+  }
+  async activateSavedProject(path:string):Promise<void>{
+    if(!this.installedProjects().some(item=>item.path===resolve(path))){
+      throw new Error("Choose a previously created project");
+    }
+    this.settings.projectManifestPath=resolve(path);
+    this.settings.extensionPath="";
+    await this.saveSettings();
+    await this.restart();
+  }
+  async installResearchProject(project:ProjectDefinition,options:{
+    demo:boolean;intervalMinutes:number
+  }):Promise<void>{
+    if(!Number.isInteger(options.intervalMinutes)||options.intervalMinutes<0||
+      options.intervalMinutes>1440||
+      (options.intervalMinutes!==0&&options.intervalMinutes<15)){
+      throw new Error("Invalid collection interval");
+    }
+    if(!/^p-[a-z0-9-]+-[a-f0-9]{8}$/.test(project.id)){
+      throw new Error("Invalid new project identifier");
+    }
+    const directory=join(this.localDataDirectory(),"projects");
+    mkdirSync(directory,{recursive:true,mode:0o700});
+    if(lstatSync(directory).isSymbolicLink())throw new Error("Unsafe projects directory");
+    if(options.demo){
+      const filename=this.projectDemoPath(project.id);
+      if(project.sources[0]?.config.path!==filename){
+        throw new Error("Demo source path mismatch");
+      }
+      writeFileSync(filename,JSON.stringify(demoObservations(),null,2)+"\n",{
+        flag:"wx",mode:0o600
+      });
+    }
+    const manifest=join(directory,project.id+".json");
+    writeFileSync(manifest,JSON.stringify(project,null,2)+"\n",{
+      flag:"wx",mode:0o600
+    });
+    this.settings.projectManifestPath=manifest;
+    this.settings.intervalMinutes=options.intervalMinutes;
+    // A new built-in project never implicitly inherits executable third-party extensions.
+    this.settings.extensionPath="";
+    await this.saveSettings();
+    await this.restart();
+    const reply=await this.call("/project/sync","POST") as {
+      result?:{success?:boolean;runs?:Array<{error?:string}>}
+    };
+    if(reply.result?.success!==true){
+      const errors=reply.result?.runs?.map(item=>item.error).filter(Boolean)||[];
+      throw new Error("Project saved, but first collection failed: "+
+        errors.slice(0,2).join("; "));
+    }
+    this.notifyExport(reply);
+    await this.redraw();
+  }
   private paths():{dir:string;vault:string}{
     const adapter=this.app.vault.adapter;
     if(!(adapter instanceof FileSystemAdapter))throw new Error("Desktop filesystem vault required");
@@ -592,8 +707,7 @@ export default class ScraperPlugin extends Plugin {
         throw new Error("Use an authorized public RSS URL without credentials");
       }
     }
-    const localData=join(homedir(),".x-feed-scraper",
-      createHash("sha256").update(vault).digest("hex").slice(0,20));
+    const localData=this.localDataDirectory();
     const embedded=prepareBundledAssets(localData);
     await this.bridge.start({
       executable:this.settings.nodeExecutable,
