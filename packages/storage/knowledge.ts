@@ -32,6 +32,7 @@ export class KnowledgeStore extends Store {
     super(file);
     this.db.exec(
       "CREATE TABLE IF NOT EXISTS kb_projects (id TEXT PRIMARY KEY,name TEXT NOT NULL,config_hash TEXT NOT NULL,created_at TEXT NOT NULL,updated_at TEXT NOT NULL);" +
+      "CREATE TABLE IF NOT EXISTS kb_migration_state (name TEXT PRIMARY KEY,fingerprint TEXT NOT NULL);" +
       "CREATE TABLE IF NOT EXISTS kb_connections (project_id TEXT NOT NULL REFERENCES kb_projects(id),connection_id TEXT NOT NULL,adapter_id TEXT NOT NULL,config_hash TEXT NOT NULL DEFAULT '',created_at TEXT NOT NULL,PRIMARY KEY(project_id,connection_id));" +
       "CREATE TABLE IF NOT EXISTS kb_observations (project_id TEXT NOT NULL,connection_id TEXT NOT NULL,item_id TEXT NOT NULL,type TEXT NOT NULL,title TEXT,text TEXT,url TEXT,attributes_json TEXT NOT NULL,media_json TEXT NOT NULL,occurred_at TEXT,first_seen TEXT NOT NULL,last_seen TEXT NOT NULL,PRIMARY KEY(project_id,connection_id,item_id),FOREIGN KEY(project_id,connection_id) REFERENCES kb_connections(project_id,connection_id));" +
       "CREATE TABLE IF NOT EXISTS kb_entities (project_id TEXT NOT NULL REFERENCES kb_projects(id),entity_key TEXT NOT NULL,type TEXT NOT NULL,title TEXT NOT NULL,url TEXT,attributes_json TEXT NOT NULL,created_at TEXT NOT NULL,updated_at TEXT NOT NULL,PRIMARY KEY(project_id,entity_key));" +
@@ -239,9 +240,21 @@ export class KnowledgeStore extends Store {
    */
   migrateLegacy():{observations:number;entities:number}{
     const migrated={observations:0,entities:0};
-    const count=this.db.prepare("SELECT COUNT(*) count FROM posts").get() as {count:number};
-    const sourceCount=this.db.prepare("SELECT COUNT(*) count FROM sources").get() as {count:number};
-    if(!count.count&&!sourceCount.count)return migrated;
+    const state=this.db.prepare(
+      "SELECT "+
+      "(SELECT COUNT(*) FROM posts) posts,"+
+      "(SELECT COUNT(*) FROM sources) sources,"+
+      "(SELECT COUNT(*) FROM post_sources) links,"+
+      "(SELECT COUNT(*) FROM reviews) reviews,"+
+      "(SELECT MAX(updated_at) FROM sources) latest_source,"+
+      "(SELECT MAX(last_seen) FROM posts) latest_post"
+    ).get() as Record<string,unknown>;
+    if(!Number(state.posts)&&!Number(state.sources))return migrated;
+    const fingerprint=hash(JSON.stringify(state));
+    const previous=this.db.prepare(
+      "SELECT fingerprint FROM kb_migration_state WHERE name='legacy-v0.4'"
+    ).get() as {fingerprint:string}|undefined;
+    if(previous?.fingerprint===fingerprint)return migrated;
     const legacyId="legacy-x-feed",date=now();
     this.db.exec("BEGIN IMMEDIATE");
     try{
@@ -305,6 +318,10 @@ export class KnowledgeStore extends Store {
         ).run(legacyId,connectionId,String(link.post_id),String(link.normalized_url),
           JSON.stringify([{signal:"legacy-link",detail:"Imported from v0.4.0 post-source relationship"}]));
       }
+      this.db.prepare(
+        "INSERT INTO kb_migration_state(name,fingerprint) VALUES('legacy-v0.4',?) "+
+        "ON CONFLICT(name) DO UPDATE SET fingerprint=excluded.fingerprint"
+      ).run(fingerprint);
       this.db.exec("COMMIT");
       return migrated;
     }catch(error){this.db.exec("ROLLBACK");throw error;}
