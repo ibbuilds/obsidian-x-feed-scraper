@@ -167,6 +167,14 @@ describe("X Feed Scraper in actual Obsidian Desktop",function(){
     });
     const start=browser.$("//button[normalize-space()='Create research project']");
     await start.waitForDisplayed({timeout:30000});
+    // Earlier tests may display a temporary Obsidian notice directly over
+    // this button. Wait for it to clear rather than losing the real user click.
+    await browser.waitUntil(async()=>{
+      const notices=await browser.$(".notice");
+      for(const notice of notices)if(await notice.isDisplayed().catch(()=>false))return false;
+      return true;
+    },{timeout:25000,interval:200,timeoutMsg:"A transient notice is blocking project setup"});
+    await start.waitForClickable({timeout:10000});
     await start.click();
     const modal=browser.$(".modal-container");
     await modal.waitForDisplayed({timeout:10000});
